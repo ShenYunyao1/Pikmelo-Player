@@ -426,7 +426,11 @@ class _LibraryPageState extends State<LibraryPage> {
         if (index < matchedPlaylists.length) {
           final playlist = matchedPlaylists[index];
           return ListTile(
-            leading: MusicArtwork(title: playlist.name, size: 44),
+            leading: MusicArtwork(
+              title: playlist.name,
+              size: 44,
+              artwork: widget.controller.playlistArtwork(playlist.id),
+            ),
             title: Text(playlist.name),
             subtitle: const Text('歌单'),
             onTap: () => _open(playlist, desktop),
@@ -435,7 +439,11 @@ class _LibraryPageState extends State<LibraryPage> {
         final match = matches[index - matchedPlaylists.length];
         final entry = match.entry;
         return ListTile(
-          leading: MusicArtwork(title: entry.track!.title, size: 44),
+          leading: MusicArtwork(
+            title: entry.track!.title,
+            size: 44,
+            artwork: widget.controller.artworkFor(entry.id),
+          ),
           title: Text(entry.track!.title),
           subtitle: Text(
             '${entry.track!.artist ?? match.playlist.name} · ${entry.downloaded ? '已下载' : '未下载'}',

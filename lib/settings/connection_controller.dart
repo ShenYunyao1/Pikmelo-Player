@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
@@ -16,6 +17,7 @@ import '../sync/sync_service.dart';
 import 'models/server_connection.dart';
 import 'media_storage_controller.dart';
 import '../updates/update_controller.dart';
+import '../artwork/artwork_service.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
   ServerConnection connection,
@@ -36,6 +38,9 @@ class ConnectionController extends ChangeNotifier {
     playback?.resolveSource = _prepareSource;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
     playback?.addListener(_playbackChanged);
+    playback?.loadArtwork = (item) => item.serverUri == serverUri
+        ? artworkFor(item.track.id)
+        : Future.value();
   }
 
   final ApiKeyStore _keyStore;
@@ -67,6 +72,91 @@ class ConnectionController extends ChangeNotifier {
   Future<void> _configurationQueue = Future.value();
   Future<void>? _syncFuture;
   Future<RestoredConnection?>? _initialization;
+  final _artwork = ArtworkService();
+
+  Future<Uint8List?> artworkFor(String id, {String? coverId}) {
+    final library = _library;
+    final storage = mediaStorage;
+    final scope = _scope;
+    final key = _apiKey;
+    if (_disposed ||
+        library == null ||
+        storage == null ||
+        scope == null ||
+        key == null) {
+      return Future.value();
+    }
+    final tracks = library
+        .tracks(serverUri)
+        .where((track) => track.id == id && !track.missing && !track.removed);
+    if (tracks.isEmpty) return Future.value();
+    final track = tracks.first;
+    final path = library.offlineSource(serverUri, id);
+    return _artwork.load(
+      scope: scope,
+      revision: jsonEncode(track.toJson()),
+      path: path,
+      coverId: coverId ?? track.coverId,
+      files: storage.store.files,
+      retryToken: '${storage.networkRevision}',
+      allowed: () =>
+          !_disposed &&
+          _scope == scope &&
+          _library!
+              .tracks(serverUri)
+              .any(
+                (track) => track.id == id && !track.missing && !track.removed,
+              ),
+      fetchCover: (id) => _fetchArtwork(id, scope, key),
+    );
+  }
+
+  Future<Uint8List?> playlistArtwork(String id) {
+    final matches = _playlists.where(
+      (playlist) => playlist.id == id && !playlist.subscriptionInvalid,
+    );
+    if (matches.isEmpty) return Future.value();
+    final playlist = matches.first;
+    final entries = entriesFor(id)
+        .where((entry) => !entry.unavailable && entry.track != null);
+    final coverId = playlist.coverId;
+    if (entries.isNotEmpty) {
+      return artworkFor(entries.first.id, coverId: coverId);
+    }
+    final scope = _scope;
+    final key = _apiKey;
+    final storage = mediaStorage;
+    if (scope == null || key == null || storage == null) return Future.value();
+    return _artwork.load(
+      scope: scope,
+      revision: jsonEncode(playlist.toJson()),
+      path: null,
+      coverId: coverId,
+      files: storage.store.files,
+      retryToken: '${storage.networkRevision}',
+      allowed: () =>
+          !_disposed &&
+          _scope == scope &&
+          _playlists.any((p) => p.id == id && !p.subscriptionInvalid),
+      fetchCover: (id) => _fetchArtwork(id, scope, key),
+    );
+  }
+
+  Future<Uint8List?> _fetchArtwork(String id, String scope, String key) async {
+    await mediaStorage!.ready;
+    await mediaStorage!.refreshNetwork();
+    if (_disposed ||
+        _scope != scope ||
+        !mediaStorage!.allows(DownloadPurpose.manual)) {
+      return null;
+    }
+    final client = _createClient(_connection, key);
+    try {
+      return await client.fetchCover(id);
+    } finally {
+      client.close();
+    }
+  }
 
   bool get busy => _busy;
   bool get connected => _connected;

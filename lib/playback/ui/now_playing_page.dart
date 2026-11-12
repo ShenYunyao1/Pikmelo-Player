@@ -85,6 +85,7 @@ class NowPlayingPage extends StatelessWidget {
                                   child: MusicArtwork(
                                     title: item.track.title,
                                     size: artworkSize,
+                                    artwork: controller.loadArtwork?.call(item),
                                   ),
                                 ),
                                 const SizedBox(height: 28),

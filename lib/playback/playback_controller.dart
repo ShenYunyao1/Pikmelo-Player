@@ -20,6 +20,7 @@ class PlaybackController extends ChangeNotifier {
   Future<bool> Function()? requestAudioFocus;
   Future<String> Function(PlaybackItem item)? resolveSource;
   VoidCallback? cancelPreparation;
+  Future<Uint8List?> Function(PlaybackItem)? loadArtwork;
   String? _systemError;
   String? get systemError => _systemError;
 

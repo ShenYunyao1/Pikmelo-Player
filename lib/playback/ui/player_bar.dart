@@ -46,7 +46,11 @@ class PlayerBar extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            MusicArtwork(title: item.track.title, size: 48),
+                            MusicArtwork(
+                              title: item.track.title,
+                              size: 48,
+                              artwork: controller.loadArtwork?.call(item),
+                            ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Column(

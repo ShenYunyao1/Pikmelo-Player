@@ -14,6 +14,10 @@ class Track {
 
   String get title => _json['title'] as String? ?? '未命名曲目';
   String? get artist => _json['artist'] as String?;
+  String? get coverId {
+    final value = _json['cover_id'];
+    return value is String && value.isNotEmpty ? value : null;
+  }
   int? get size => _json['size'] is int ? _json['size'] as int : null;
   bool get missing => _json['missing'] == true;
   bool get removed => _json['removed'] == true;

@@ -27,6 +27,10 @@ class Playlist {
   final List<String> unavailableTrackIds;
 
   String get name => _json['name'] as String? ?? '未命名歌单';
+  String? get coverId {
+    final value = _json['cover_id'];
+    return value is String && value.isNotEmpty ? value : null;
+  }
   bool get readOnly => _json['read_only'] == true;
   bool get subscriptionInvalid => _json['subscription_status'] == 'invalid';
 

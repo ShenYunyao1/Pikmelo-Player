@@ -70,7 +70,11 @@ class QueueContents extends StatelessWidget {
                       selected: index == controller.currentIndex,
                       selectedTileColor: Theme.of(context).colorScheme.primary
                           .withValues(alpha: 0.1),
-                      leading: MusicArtwork(title: item.track.title, size: 40),
+                      leading: MusicArtwork(
+                        title: item.track.title,
+                        size: 40,
+                        artwork: controller.loadArtwork?.call(item),
+                      ),
                       title: Text(
                         item.track.title,
                         maxLines: 1,

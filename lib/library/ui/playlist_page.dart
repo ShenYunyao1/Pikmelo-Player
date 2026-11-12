@@ -50,6 +50,7 @@ class PlaylistPage extends StatelessWidget {
                         children: [
                           MusicArtwork(
                             title: playlist.name,
+                            artwork: controller.playlistArtwork(playlist.id),
                             size: embedded ? 64 : 88,
                           ),
                           const SizedBox(width: 16),
@@ -161,13 +162,13 @@ class PlaylistPage extends StatelessWidget {
                           ? () =>
                                 controller.playPlaylist(playlistId, entryIndex)
                           : null,
-                      leading: Icon(
-                        active
-                            ? Icons.equalizer
-                            : entry.unavailable
-                            ? Icons.cloud_off_outlined
-                            : Icons.music_note,
-                      ),
+                      leading: entry.unavailable
+                          ? const Icon(Icons.cloud_off_outlined)
+                          : MusicArtwork(
+                              title: entry.track?.title ?? '',
+                              size: 40,
+                              artwork: controller.artworkFor(entry.id),
+                            ),
                       title: Text(
                         entry.track?.title ?? '不可用曲目',
                         maxLines: 1,

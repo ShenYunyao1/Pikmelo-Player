@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import '../../settings/models/server_connection.dart';
 
@@ -57,6 +58,35 @@ class PikmeloApiClient {
   final _closed = Completer<void>();
 
   Future<Map<String, dynamic>> checkHealth() => _getJsonUri(_apiUri('health'));
+
+  Future<Uint8List?> fetchCover(String id) => _retry(() async {
+    if (id.isEmpty || id.contains('/') || id.contains('\\')) {
+      throw ArgumentError.value(id, 'id');
+    }
+    final request = await _httpClient
+        .getUrl(_apiUri('covers/$id'))
+        .timeout(requestTimeout);
+    request.followRedirects = false;
+    _setAuthHeaders(request);
+    request.headers.set(HttpHeaders.acceptHeader, 'image/*');
+    final response = await _timeout(request.close(), request);
+    if (response.statusCode == 404) {
+      await _timeout(response.drain<void>(), request);
+      return null;
+    }
+    if (response.statusCode != 200) await _throwResponseError(response);
+    final bytes = BytesBuilder(copy: false);
+    await _timeout(() async {
+      await for (final chunk in response) {
+        if (bytes.length + chunk.length > 8 * 1024 * 1024) {
+          request.abort();
+          throw const FormatException('Cover exceeds size limit');
+        }
+        bytes.add(chunk);
+      }
+    }(), request);
+    return bytes.takeBytes();
+  });
 
   Future<PikmeloSyncPage> fetchSyncPage({
     String? cursor,

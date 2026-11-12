@@ -1,9 +1,17 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 class MusicArtwork extends StatelessWidget {
-  const MusicArtwork({super.key, required this.title, this.size = 56});
+  const MusicArtwork({
+    super.key,
+    required this.title,
+    this.size = 56,
+    this.artwork,
+  });
   final String title;
   final double size;
+  final Future<Uint8List?>? artwork;
 
   @override
   Widget build(BuildContext context) {
@@ -14,7 +22,7 @@ class MusicArtwork extends StatelessWidget {
       const Color(0xFF615448),
       const Color(0xFF4E4967),
     ];
-    return ExcludeSemantics(
+    final placeholder = ExcludeSemantics(
       child: Container(
         width: size,
         height: size,
@@ -36,6 +44,32 @@ class MusicArtwork extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (artwork == null) return placeholder;
+    return FutureBuilder<Uint8List?>(
+      future: artwork,
+      builder: (context, snapshot) {
+        final bytes = snapshot.connectionState == ConnectionState.done
+            ? snapshot.data
+            : null;
+        if (bytes == null) return placeholder;
+        return ExcludeSemantics(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.memory(
+              bytes,
+              width: size,
+              height: size,
+              fit: BoxFit.cover,
+              cacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                  .ceil()
+                  .clamp(1, 1024),
+              gaplessPlayback: false,
+              errorBuilder: (_, _, _) => placeholder,
+            ),
+          ),
+        );
+      },
     );
   }
 }
