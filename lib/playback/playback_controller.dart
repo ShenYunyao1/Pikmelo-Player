@@ -42,6 +42,7 @@ class PlaybackController extends ChangeNotifier {
   int _version = 0;
   double _volume = 100;
   bool _loading = false;
+  bool _stopped = false;
   bool _playRequested = false;
   bool _ducked = false;
   int _transportRevision = 0;
@@ -59,6 +60,7 @@ class PlaybackController extends ChangeNotifier {
   PlaybackMode get mode => _mode;
   double get volume => _volume;
   bool get loading => _loading;
+  bool get stopped => _stopped;
   bool get playRequested => _playRequested;
   int get transportRevision => _transportRevision;
 
@@ -130,8 +132,13 @@ class PlaybackController extends ChangeNotifier {
     return jump(index);
   }
 
-  Future<void> jump(int index, {bool play = true}) {
+  Future<void> jump(
+    int index, {
+    bool play = true,
+    Duration position = Duration.zero,
+  }) {
     if (_disposed) return Future.value();
+    _stopped = false;
     cancelPreparation?.call();
     _transportRevision++;
     _playRequested = play;
@@ -190,6 +197,14 @@ class PlaybackController extends ChangeNotifier {
       if (!_current(version) || _state.error != null) return;
       await engine.setVolume(_effectiveVolume);
       if (!_current(version)) return;
+      if (position > Duration.zero) {
+        final target =
+            _state.duration > Duration.zero && position > _state.duration
+            ? _state.duration
+            : position;
+        await engine.seek(target);
+        if (!_current(version)) return;
+      }
       if (_playRequested) await _playEngine(version);
       if (!_current(version)) return;
       _loading = false;
@@ -209,8 +224,11 @@ class PlaybackController extends ChangeNotifier {
     final item = current;
     if (item == null) return jump(0);
     if (!_available(item)) return reconcile();
-    if (_engine == null || _state.completed || _state.error != null) {
-      return jump(_index);
+    if (_stopped ||
+        _engine == null ||
+        _state.completed ||
+        _state.error != null) {
+      return jump(_index, position: _stopped ? _state.position : Duration.zero);
     }
     final version = _version;
     return _schedule(version, () => _playEngine(version));
@@ -224,6 +242,22 @@ class PlaybackController extends ChangeNotifier {
       await _engine?.pause();
       _notify();
     });
+  }
+
+  Future<void> stop() {
+    if (_disposed) return Future.value();
+    final version = ++_version;
+    _transportRevision++;
+    _playRequested = false;
+    _stopped = true;
+    _loading = false;
+    cancelPreparation?.call();
+    _state = PlaybackState(
+      position: _state.position,
+      duration: _state.duration,
+    );
+    _notify();
+    return _schedule(version, _releaseEngine);
   }
 
   Future<void> _playEngine(int version) async {
@@ -250,6 +284,11 @@ class PlaybackController extends ChangeNotifier {
           ? duration.inMilliseconds
           : position.inMilliseconds.abs(),
     );
+    if (_stopped) {
+      _state = _state.copyWith(position: Duration(milliseconds: milliseconds));
+      _notify();
+      return Future.value();
+    }
     return _schedule(_version, () async {
       _completionHandled = false;
       _state = _state.copyWith(completed: false);
@@ -350,6 +389,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> clear() {
+    _stopped = false;
     cancelPreparation?.call();
     _transportRevision++;
     _playRequested = false;

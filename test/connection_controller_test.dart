@@ -13,6 +13,7 @@ import 'package:pikmelo_player/infrastructure/storage/api_key_store.dart';
 import 'package:pikmelo_player/infrastructure/storage/local_library_store.dart';
 import 'package:pikmelo_player/settings/connection_controller.dart';
 import 'package:pikmelo_player/settings/models/server_connection.dart';
+import 'package:pikmelo_player/library/ui/playlist_page.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +37,46 @@ void main() {
   tearDown(() {
     controller.dispose();
     store.close();
+  });
+
+  testWidgets('download status preserves playlist title and action alignment', (
+    tester,
+  ) async {
+    client.health.complete({'version': 'test'});
+    await tester.runAsync(
+      () => controller.connectAndSync('https://example.com', 'test-key'),
+    );
+    Widget page() => MaterialApp(
+      key: UniqueKey(),
+      home: PlaylistPage(
+        controller: controller,
+        playlistId: 'playlist-1',
+        serverKey: ServerConnection.serverKey(controller.serverUri),
+      ),
+    );
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    final title = tester.getTopLeft(find.text('Song').first);
+    final download = tester.getCenter(find.byTooltip('下载曲目').first);
+    final root = await tester.runAsync(
+      () => Directory.systemTemp.createTemp('pikmelo-row-'),
+    );
+    final file = File('${root!.path}/audio.media');
+    await tester.runAsync(() => file.writeAsBytes(List.filled(5, 0)));
+    store.saveOfflineMedia(
+      serverUri: controller.serverUri,
+      expectedGeneration: store.generationFor(controller.serverUri),
+      trackId: 'track-1',
+      track: store.tracks(controller.serverUri).first,
+      file: file,
+    );
+    await tester.pumpWidget(page());
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('Song').first), title);
+    expect(tester.getCenter(find.byTooltip('已下载').first), download);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.runAsync(() => root.delete(recursive: true));
   });
 
   test('controller connects once and exposes typed playlists', () async {

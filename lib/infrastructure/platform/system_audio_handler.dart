@@ -1,9 +1,22 @@
 import 'package:audio_service/audio_service.dart';
 
+import 'dart:async';
+import 'dart:io';
+import 'dart:typed_data';
+
+import 'package:crypto/crypto.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../../playback/models/playback_state.dart' as local;
 import '../../playback/playback_controller.dart';
+import '../../playback/models/playback_item.dart';
 
 class SystemAudioHandler extends BaseAudioHandler {
+  SystemAudioHandler({this.saveArtwork = _saveArtwork});
+  final Future<Uri> Function(Uint8List) saveArtwork;
+  PlaybackItem? _artworkItem;
+  Uri? _artworkUri;
+  int _artworkRevision = 0;
   PlaybackController? _controller;
   Object? _publishedQueue;
 
@@ -11,6 +24,9 @@ class SystemAudioHandler extends BaseAudioHandler {
     _controller?.removeListener(_publish);
     _controller = controller;
     _publishedQueue = null;
+    _artworkItem = null;
+    _artworkUri = null;
+    _artworkRevision++;
     controller?.addListener(_publish);
     _publish();
   }
@@ -37,17 +53,29 @@ class SystemAudioHandler extends BaseAudioHandler {
     final state = controller.state;
     final index = controller.currentIndex;
     final current = controller.current;
+    if (!identical(current, _artworkItem)) {
+      _artworkItem = current;
+      _artworkUri = null;
+      final revision = ++_artworkRevision;
+      if (current != null && controller.loadArtwork != null) {
+        unawaited(_loadArtwork(controller, current, revision));
+      }
+    }
     final item = current == null
         ? null
-        : queue.value[index].copyWith(duration: state.duration);
+        : queue.value[index].copyWith(
+            duration: state.duration,
+            artUri: _artworkUri,
+          );
     final previous = mediaItem.value;
     if (previous?.id != item?.id ||
         previous?.duration != item?.duration ||
         previous?.title != item?.title ||
-        previous?.artist != item?.artist) {
+        previous?.artist != item?.artist ||
+        previous?.artUri != item?.artUri) {
       mediaItem.add(item);
     }
-    final processing = current == null
+    final processing = current == null || controller.stopped
         ? AudioProcessingState.idle
         : state.error != null
         ? AudioProcessingState.error
@@ -91,6 +119,70 @@ class SystemAudioHandler extends BaseAudioHandler {
     );
   }
 
+  Future<void> _loadArtwork(
+    PlaybackController controller,
+    PlaybackItem item,
+    int revision,
+  ) async {
+    try {
+      final bytes = await controller.loadArtwork!(item);
+      if (bytes == null ||
+          revision != _artworkRevision ||
+          _controller != controller) {
+        return;
+      }
+      final uri = await saveArtwork(bytes);
+      if (revision != _artworkRevision ||
+          _controller != controller ||
+          !identical(controller.current, item)) {
+        return;
+      }
+      _artworkUri = uri;
+      _publish();
+    } catch (_) {
+      /* Media controls remain available when artwork is unavailable. */
+    }
+  }
+
+  static Future<Uri> _saveArtwork(Uint8List bytes) async {
+    final root = await getTemporaryDirectory();
+    final directory = await Directory(
+      '${root.path}/pikmelo-notification-artwork',
+    ).create(recursive: true);
+    final file = File('${directory.path}/${sha256.convert(bytes)}.image');
+    if (!await file.exists()) {
+      final partial = File(
+        '${file.path}.$pid-${DateTime.now().microsecondsSinceEpoch}.part',
+      );
+      try {
+        await partial.writeAsBytes(bytes, flush: true);
+        await partial.rename(file.path);
+      } finally {
+        if (await partial.exists()) await partial.delete();
+      }
+    }
+    final files = await directory
+        .list()
+        .where((entry) => entry is File && entry.path.endsWith('.image'))
+        .cast<File>()
+        .toList();
+    final stats = <File, FileStat>{};
+    var total = 0;
+    for (final cached in files) {
+      final stat = await cached.stat();
+      stats[cached] = stat;
+      total += stat.size;
+    }
+    files.sort((a, b) => stats[a]!.modified.compareTo(stats[b]!.modified));
+    for (final cached in files) {
+      if (total <= 64 * 1024 * 1024) break;
+      if (cached.path == file.path) continue;
+      await cached.delete();
+      total -= stats[cached]!.size;
+    }
+    return file.uri;
+  }
+
   @override
   Future<void> play() async => _controller?.play();
   @override
@@ -105,12 +197,16 @@ class SystemAudioHandler extends BaseAudioHandler {
   Future<void> skipToQueueItem(int index) async => _controller?.jump(index);
   @override
   Future<void> stop() async {
-    await _controller?.clear();
+    await _controller?.stop();
     await super.stop();
   }
 
   @override
-  Future<void> onTaskRemoved() => stop();
+  Future<void> onTaskRemoved() async {
+    await _controller?.clear();
+    await super.stop();
+  }
+
   @override
   Future<void> onNotificationDeleted() => stop();
   @override

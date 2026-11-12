@@ -31,6 +31,8 @@ class SystemMediaService {
               'top.shenyunyao.pikmelo_player.playback',
           androidNotificationChannelName: '音乐播放',
           androidStopForegroundOnPause: false,
+          artDownscaleWidth: 512,
+          artDownscaleHeight: 512,
         ),
       ));
       final session = await AudioSession.instance;

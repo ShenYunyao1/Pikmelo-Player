@@ -27,7 +27,7 @@ class NowPlayingPage extends StatelessWidget {
             PopupMenuButton<String>(
               tooltip: '播放选项',
               onSelected: (value) {
-                if (value == 'stop') controller.clear();
+                if (value == 'stop') controller.stop();
                 if (value == 'volume') {
                   showModalBottomSheet<void>(
                     context: context,
@@ -121,11 +121,18 @@ class NowPlayingPage extends StatelessWidget {
                                           .error,
                                     ),
                                   ),
-                                if (controller.loading)
-                                  TextButton(
-                                    onPressed: controller.clear,
+                                Visibility(
+                                  visible: controller.loading,
+                                  maintainState: true,
+                                  maintainAnimation: true,
+                                  maintainSize: true,
+                                  child: TextButton(
+                                    onPressed: controller.loading
+                                        ? controller.stop
+                                        : null,
                                     child: const Text('取消播放准备'),
                                   ),
+                                ),
                                 const SizedBox(height: 20),
                                 PlaybackProgress(controller: controller),
                                 const SizedBox(height: 12),

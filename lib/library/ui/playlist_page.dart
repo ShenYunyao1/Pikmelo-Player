@@ -182,33 +182,49 @@ class PlaylistPage extends StatelessWidget {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (controller.playback != null &&
-                              (entry.downloaded || entry.canDownload))
-                            IconButton(
-                              tooltip: '加入播放队列',
-                              onPressed: controller.busy
-                                  ? null
-                                  : () {
-                                      controller.appendToQueue(entry.id);
-                                      ScaffoldMessenger.of(context)
-                                          .showSnackBar(
-                                            const SnackBar(
-                                              content: Text('已加入播放队列'),
-                                            ),
-                                          );
-                                    },
-                              icon: const Icon(Icons.playlist_add),
-                            ),
-                          if (entry.downloaded)
-                            const Icon(Icons.check_circle, size: 20)
-                          else if (entry.canDownload)
-                            IconButton(
-                              tooltip: '下载曲目',
-                              onPressed: controller.busy
-                                  ? null
-                                  : () => controller.enqueueDownload(entry.id),
-                              icon: const Icon(Icons.download_outlined),
-                            ),
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child:
+                                controller.playback != null &&
+                                    (entry.downloaded || entry.canDownload)
+                                ? IconButton(
+                                    tooltip: '加入播放队列',
+                                    onPressed: controller.busy
+                                        ? null
+                                        : () {
+                                            controller.appendToQueue(entry.id);
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                                  const SnackBar(
+                                                    content: Text('已加入播放队列'),
+                                                  ),
+                                                );
+                                          },
+                                    icon: const Icon(Icons.playlist_add),
+                                  )
+                                : null,
+                          ),
+                          SizedBox(
+                            width: 48,
+                            height: 48,
+                            child: entry.downloaded
+                                ? const Tooltip(
+                                    message: '已下载',
+                                    child: Icon(Icons.check_circle, size: 20),
+                                  )
+                                : entry.canDownload
+                                ? IconButton(
+                                    tooltip: '下载曲目',
+                                    onPressed: controller.busy
+                                        ? null
+                                        : () => controller.enqueueDownload(
+                                            entry.id,
+                                          ),
+                                    icon: const Icon(Icons.download_outlined),
+                                  )
+                                : null,
+                          ),
                         ],
                       ),
                     );

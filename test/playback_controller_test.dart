@@ -111,6 +111,27 @@ void main() {
     },
   );
 
+  test(
+    'stop invalidates pending preparation and retains a playable queue',
+    () async {
+      final source = Completer<String>();
+      var reads = 0;
+      controller.resolveSource = (item) =>
+          reads++ == 0 ? source.future : Future.value(item.path);
+      final opening = controller.playQueue(items);
+      await _tick();
+      final stopping = controller.stop();
+      source.complete(items.first.path);
+      await Future.wait([opening, stopping]);
+      expect(controller.queue, hasLength(3));
+      expect(controller.stopped, isTrue);
+      expect(controller.loading, isFalse);
+      expect(engines, isEmpty);
+      await controller.play();
+      expect(engines.single.played, isTrue);
+    },
+  );
+
   test('queue supports pause, seek, volume and previous/next', () async {
     await controller.playQueue(items, index: 1);
     expect(controller.current, items[1]);

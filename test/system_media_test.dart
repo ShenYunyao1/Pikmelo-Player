@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:audio_service/audio_service.dart' as system;
 import 'package:audio_session/audio_session.dart';
@@ -13,6 +14,7 @@ import 'package:pikmelo_player/playback/playback_controller.dart';
 import 'package:pikmelo_player/playback/playback_engine.dart';
 import 'package:pikmelo_player/playback/ui/player_bar.dart';
 import 'package:pikmelo_player/playback/ui/now_playing_page.dart';
+import 'package:pikmelo_player/playback/ui/playback_controls.dart';
 
 void main() {
   late PlaybackController controller;
@@ -62,6 +64,61 @@ void main() {
     await interruptions.close();
     await noisy.close();
   });
+
+  testWidgets(
+    'loading cancellation keeps playback controls at fixed coordinates',
+    (tester) async {
+      final source = Completer<String>();
+      controller.resolveSource = (_) => source.future;
+      late Future<void> opening;
+      await tester.runAsync(() async {
+        opening = controller.playQueue([item]);
+        await _tick();
+      });
+      await tester.pumpWidget(
+        MaterialApp(home: NowPlayingPage(controller: controller)),
+      );
+      final before = tester.getTopLeft(find.byType(PlaybackProgress));
+      final controlsBefore = tester.getTopLeft(find.byType(TransportControls));
+      source.complete(item.path);
+      await tester.runAsync(() => opening);
+      await tester.pumpAndSettle();
+      expect(tester.getTopLeft(find.byType(PlaybackProgress)), before);
+      expect(tester.getTopLeft(find.byType(TransportControls)), controlsBefore);
+      expect(find.text('取消播放准备').hitTestable(), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  test(
+    'notification artwork ignores delayed results after a track change',
+    () async {
+      handler.attach(null);
+      handler = SystemAudioHandler(
+        saveArtwork: (bytes) async => Uri.file('/cover-${bytes.first}.png'),
+      )..attach(controller);
+      final first = Completer<Uint8List?>();
+      final second = Completer<Uint8List?>();
+      final other = PlaybackItem(
+        serverUri: item.serverUri,
+        track: Track.fromJson({'id': 'two', 'title': 'Second'}),
+        path: '/two.media',
+      );
+      controller.loadArtwork = (current) =>
+          current.track.id == 'one' ? first.future : second.future;
+      await controller.playQueue([item, other]);
+      await controller.jump(1);
+      second.complete(Uint8List.fromList([2]));
+      await _tick();
+      expect(handler.mediaItem.value?.artUri, Uri.file('/cover-2.png'));
+      first.complete(Uint8List.fromList([1]));
+      await _tick();
+      expect(handler.mediaItem.value?.title, 'Second');
+      expect(handler.mediaItem.value?.artUri, Uri.file('/cover-2.png'));
+      await controller.clear();
+      expect(handler.mediaItem.value, isNull);
+    },
+  );
 
   testWidgets(
     'full player opens queue and fits narrow screens with scaled text',
@@ -157,7 +214,7 @@ void main() {
       expect(controller.mode, PlaybackMode.shuffle);
       await handler.stop();
       await _tick();
-      expect(handler.mediaItem.value, isNull);
+      expect(handler.mediaItem.value, isNotNull);
       expect(
         handler.playbackState.value.processingState,
         system.AudioProcessingState.idle,
@@ -243,6 +300,30 @@ void main() {
       expect(controller.state.playing, isFalse);
     },
   );
+  test(
+    'notification stop retains queue and position and play resumes',
+    () async {
+      await controller.playQueue([item]);
+      engines.single._emit(
+        const PlaybackState(
+          playing: true,
+          position: Duration(seconds: 4),
+          duration: Duration(seconds: 10),
+        ),
+      );
+      await handler.stop();
+      expect(controller.queue, hasLength(1));
+      expect(controller.current, item);
+      expect(controller.state.position, const Duration(seconds: 4));
+      expect(engines.single.disposed, isTrue);
+      await handler.play();
+      expect(engines.length, 2);
+      expect(controller.state.error, isNull);
+      expect(controller.playRequested, isTrue);
+      expect(controller.state.position, const Duration(seconds: 4));
+    },
+  );
+
   test('task dismissal clears playback and system state', () async {
     await controller.playQueue([item]);
     await handler.onTaskRemoved();
