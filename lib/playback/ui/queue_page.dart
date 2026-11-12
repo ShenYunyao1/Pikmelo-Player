@@ -59,11 +59,14 @@ class QueueContents extends StatelessWidget {
         Expanded(
           child: controller.queue.isEmpty
               ? const Center(child: Text('播放队列为空'))
-              : ListView.builder(
+              : ReorderableListView.builder(
+                  buildDefaultDragHandles: false,
+                  onReorderItem: controller.move,
                   itemCount: controller.queue.length,
                   itemBuilder: (context, index) {
                     final item = controller.queue[index];
                     return ListTile(
+                      key: ObjectKey(item),
                       selected: index == controller.currentIndex,
                       selectedTileColor: Theme.of(context).colorScheme.primary
                           .withValues(alpha: 0.1),
@@ -78,9 +81,63 @@ class QueueContents extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      trailing: index == controller.currentIndex
-                          ? const Icon(Icons.equalizer, size: 18)
-                          : null,
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (index == controller.currentIndex)
+                            const Icon(Icons.equalizer, size: 18),
+                          PopupMenuButton<String>(
+                            tooltip: '队列曲目操作',
+                            onSelected: (action) {
+                              final currentIndex = controller.queue.indexOf(
+                                item,
+                              );
+                              if (currentIndex < 0) return;
+                              switch (action) {
+                                case 'up':
+                                  controller.move(
+                                    currentIndex,
+                                    currentIndex - 1,
+                                  );
+                                case 'down':
+                                  controller.move(
+                                    currentIndex,
+                                    currentIndex + 1,
+                                  );
+                                case 'remove':
+                                  controller.remove(currentIndex);
+                              }
+                            },
+                            itemBuilder: (_) => [
+                              if (index > 0)
+                                const PopupMenuItem(
+                                  value: 'up',
+                                  child: Text('上移'),
+                                ),
+                              if (index < controller.queue.length - 1)
+                                const PopupMenuItem(
+                                  value: 'down',
+                                  child: Text('下移'),
+                                ),
+                              const PopupMenuItem(
+                                value: 'remove',
+                                child: Text('移出队列'),
+                              ),
+                            ],
+                          ),
+                          ReorderableDragStartListener(
+                            index: index,
+                            child: const Tooltip(
+                              message: '拖动调整顺序',
+                              child: SizedBox(
+                                width: 40,
+                                height: 48,
+                                child: Icon(Icons.drag_handle),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                       onTap: () => controller.jump(index),
                     );
                   },

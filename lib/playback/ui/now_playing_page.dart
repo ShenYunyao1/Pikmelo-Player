@@ -65,7 +65,7 @@ class NowPlayingPage extends StatelessWidget {
           ],
         ),
         body: item == null
-            ? Center(child: Text(error ?? '选择一首已下载的曲目开始播放'))
+            ? Center(child: Text(error ?? '选择曲目开始播放，未下载曲目会先下载'))
             : SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {

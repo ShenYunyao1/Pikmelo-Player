@@ -38,6 +38,79 @@ void main() {
     await controller.shutdown();
   });
 
+  test(
+    'queue edits preserve the playing source and support duplicate appends',
+    () async {
+      await controller.playQueue(items, index: 1);
+      final engine = engines.single;
+      controller.move(1, 0);
+      expect(controller.current, items[1]);
+      expect(controller.currentIndex, 0);
+      await controller.remove(2);
+      controller.append(items[1]);
+      controller.append(items[1]);
+      expect(controller.queue.length, 4);
+      expect(identical(controller.queue[2], controller.queue[3]), isFalse);
+      expect(engines.single, engine);
+      expect(engine.disposed, isFalse);
+    },
+  );
+
+  test(
+    'removing current selects next while preserving pause, then clears',
+    () async {
+      await controller.playQueue(items);
+      await controller.pause();
+      await controller.remove(0);
+      expect(controller.current, items[1]);
+      expect(controller.playRequested, isFalse);
+      expect(engines.first.disposed, isTrue);
+      expect(engines.last.played, isFalse);
+      await controller.remove(1);
+      await controller.remove(0);
+      expect(controller.queue, isEmpty);
+      expect(controller.current, isNull);
+      expect(engines.last.disposed, isTrue);
+    },
+  );
+
+  test('removing a preparing item ignores its delayed source', () async {
+    final source = Completer<String>();
+    controller.resolveSource = (item) =>
+        identical(item, items.first) ? source.future : Future.value(item.path);
+    final opening = controller.playQueue(items);
+    await _tick();
+    final removing = controller.remove(0);
+    source.complete(items.first.path);
+    await Future.wait([opening, removing]);
+    expect(controller.current, items[1]);
+    expect(engines.single.path, items[1].path);
+  });
+
+  test('reordering around current adjusts index without reopening', () async {
+    await controller.playQueue(items, index: 1);
+    controller.move(0, 2);
+    expect(controller.currentIndex, 0);
+    controller.move(2, 0);
+    expect(controller.currentIndex, 1);
+    await controller.remove(0);
+    expect(controller.currentIndex, 0);
+    expect(controller.current, items[1]);
+    expect(engines.length, 1);
+  });
+
+  test(
+    'append to empty queue selects without opening or downloading',
+    () async {
+      controller.append(items.first);
+      expect(controller.current?.track.id, items.first.track.id);
+      expect(controller.playRequested, isFalse);
+      expect(engines, isEmpty);
+      await controller.play();
+      expect(engines.single.path, items.first.path);
+    },
+  );
+
   test('queue supports pause, seek, volume and previous/next', () async {
     await controller.playQueue(items, index: 1);
     expect(controller.current, items[1]);

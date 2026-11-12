@@ -83,6 +83,19 @@ class ConnectionController extends ChangeNotifier {
     if (tracks.isNotEmpty) _downloads!.enqueue(tracks.first);
   }
 
+  void appendToQueue(String id) {
+    if (_disposed || _busy || playback == null || _library == null) return;
+    final tracks = _library!.tracks(serverUri).where((track) => track.id == id);
+    if (tracks.isEmpty || tracks.first.missing || tracks.first.removed) return;
+    playback!.append(
+      PlaybackItem(
+        serverUri: serverUri,
+        track: tracks.first,
+        path: _library!.offlineSource(serverUri, id) ?? '',
+      ),
+    );
+  }
+
   Future<void> playPlaylist(String playlistId, int entryIndex) {
     if (_disposed || _busy || playback == null || _library == null) {
       return Future.value();

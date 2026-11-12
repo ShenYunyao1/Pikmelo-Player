@@ -61,6 +61,66 @@ class PlaybackController extends ChangeNotifier {
   bool get playRequested => _playRequested;
   int get transportRevision => _transportRevision;
 
+  void append(PlaybackItem item) {
+    if (_disposed || !_available(item)) return;
+    _queue = List.unmodifiable([
+      ..._queue,
+      PlaybackItem(
+        serverUri: item.serverUri,
+        track: item.track,
+        path: item.path,
+      ),
+    ]);
+    if (_index < 0) {
+      _index = _queue.length - 1;
+      _state = const PlaybackState();
+    }
+    _shuffleBag.clear();
+    _notify();
+  }
+
+  void move(int from, int to) {
+    if (_disposed ||
+        from < 0 ||
+        from >= _queue.length ||
+        to < 0 ||
+        to >= _queue.length ||
+        from == to) {
+      return;
+    }
+    final items = [..._queue];
+    items.insert(to, items.removeAt(from));
+    if (_index == from) {
+      _index = to;
+    } else if (from < _index && to >= _index) {
+      _index--;
+    } else if (from > _index && to <= _index) {
+      _index++;
+    }
+    _queue = List.unmodifiable(items);
+    _notify();
+  }
+
+  Future<void> remove(int index) {
+    if (_disposed || index < 0 || index >= _queue.length) return Future.value();
+    final wasCurrent = index == _index;
+    final play = _playRequested;
+    final items = [..._queue];
+    final removed = items.removeAt(index);
+    _queue = List.unmodifiable(items);
+    _history.removeWhere((item) => identical(item, removed));
+    _shuffleBag.removeWhere((item) => identical(item, removed));
+    if (_queue.isEmpty) return clear();
+    if (wasCurrent) {
+      var nextIndex = _queue.indexWhere(_available, index);
+      if (nextIndex < 0) nextIndex = _queue.lastIndexWhere(_available);
+      return jump(nextIndex, play: play);
+    }
+    if (index < _index) _index--;
+    _notify();
+    return Future.value();
+  }
+
   Future<void> playQueue(List<PlaybackItem> items, {int index = 0}) {
     if (_disposed) return Future.value();
     _queue = List.unmodifiable(items);
@@ -82,7 +142,7 @@ class PlaybackController extends ChangeNotifier {
       _index = -1;
       _playRequested = false;
       _loading = false;
-      _state = const PlaybackState(error: '队列中没有可用的本地音频。');
+      _state = const PlaybackState(error: '队列中没有可播放的曲目，请检查曲库授权和下载信息。');
       _notify();
       return _schedule(version, _releaseEngine);
     }
