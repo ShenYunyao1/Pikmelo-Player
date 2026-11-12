@@ -19,6 +19,7 @@
 - 支持顺序、列表循环、单曲循环和随机模式，删除文件或授权变化时及时释放音源。
 - Android 支持前台媒体服务、后台与锁屏控制，以及音频焦点和耳机断开处理。
 - Windows 支持系统媒体控制、媒体按键及进度定位，最小化继续播放，关闭窗口退出。
+- 使用公开 GitHub Releases 检查版本，Android 按设备架构下载并验证正式签名，通过系统安装器完成更新。
 
 键盘支持空格播放暂停、Ctrl+左方向键上一首、Ctrl+右方向键下一首。文本框保留输入行为。
 
@@ -29,6 +30,7 @@
 - `lib/library` 负责曲目与歌单模型、本地曲库仓库及页面。
 - `lib/sync` 与 `lib/downloads` 分别负责同步和媒体下载业务。
 - `lib/playback` 负责共享播放控制、队列和播放器界面。
+- `lib/updates` 负责 Releases 查询、版本比较、下载校验与更新状态，平台代码负责安装能力。
 - `lib/infrastructure` 负责服务器协议、SQLite、系统凭据存储、原生音频后端及系统媒体适配。
 
 详细阶段、任务清单和验证结果见 [整体开发计划](Docs/整体开发计划.md) 与 [自定义存储及按需播放](Docs/自定义存储与按需播放计划.md)。
@@ -47,7 +49,9 @@ Android 工程使用本机 `D:\Android-SDK`，compileSdk 为 36，minSdk 为 24�
 
 ## 验证
 
-Android 安装测试使用 `flutter build apk --release --split-per-abi` 生成的对应架构 APK，产物位于 `build/app/outputs/flutter-apk/`。分架构安装包约 23–29 MiB，沿用工程测试签名。包体明细与运行验证状态见 [Android 包体分析](Docs/Android包体分析.md)。
+正式安装包从 [GitHub Releases](https://github.com/ShenYunyao1/Pikmelo-Player/releases/latest) 下载，Android 按设备架构选择，Windows 解压 ZIP 后运行。Android 正式版固定项目专用签名，已有 debug 签名版本需先卸载再安装正式版。
+
+本地发布构建通过 `PIKMELO_SIGNING_PROPERTIES` 指定工作区外的签名配置，然后执行 `flutter build apk --release --split-per-abi`。推送 `v版本号` 标签触发双平台构建，发布流程验证 Android 签名并生成 SHA-256 清单。操作与验收结果见 [自动更新与正式发布](Docs/自动更新与正式发布计划.md)，包体记录见 [Android 包体分析](Docs/Android包体分析.md)。
 
 ```powershell
 flutter analyze

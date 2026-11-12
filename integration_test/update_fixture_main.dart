@@ -62,6 +62,10 @@ Future<void> main() async {
       file: media,
     );
   }
+  // Reinstalling this QA entry point prepares an existing formal baseline for
+  // another upgrade run, using only its explicitly seeded test authorization.
+  store.authorizeOfflineMedia(uri, 'upgrade-track', store.generationFor(uri));
+  store.saveSetting('automatic_updates', 'false');
   store.close();
   await application.main();
 }

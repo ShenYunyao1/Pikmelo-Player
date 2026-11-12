@@ -95,7 +95,12 @@ class DownloadManager extends ChangeNotifier {
       } else if (status == DownloadStatus.completed) {
         status = DownloadStatus.failed;
         error = '本地文件缺失、大小不符或授权已失效，请重新下载。';
-        store.revokeOfflineMedia(serverUri, id);
+        // Document providers can be unavailable while shared storage is mounting.
+        // Retain server authorization so a later successful stat can restore playback.
+        if (cached != null &&
+            !store.files.isDocument(cached['file_path'] as String)) {
+          store.revokeOfflineMedia(serverUri, id);
+        }
       } else if (status == DownloadStatus.downloading ||
           status == DownloadStatus.queued) {
         status = DownloadStatus.paused;

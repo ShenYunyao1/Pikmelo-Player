@@ -1,8 +1,10 @@
 """Generate APK rejection cases for release-signed Android instrumentation."""
 import argparse
+import json
 import os
 from pathlib import Path
 import shutil
+import re
 import subprocess
 import tempfile
 import zipfile
@@ -24,6 +26,10 @@ def main():
     signer = str(tools / ('apksigner.bat' if os.name == 'nt' else 'apksigner'))
     aapt = str(tools / ('aapt.exe' if os.name == 'nt' else 'aapt'))
     android = str(Path(args.sdk) / 'platforms/android-36/android.jar')
+    badging = subprocess.check_output([aapt, 'dump', 'badging', args.new], text=True, encoding='utf-8')
+    code, version = re.search(r"versionCode='(\d+)' versionName='([^']+)'", badging).groups()
+    abi = re.search(r"native-code:\s*'([^']+)'", badging).group(1)
+    (assets / 'candidate.json').write_text(json.dumps({'version': version, 'versionCode': int(code), 'abi': abi}), encoding='utf-8')
 
     def sign(source, target, debug=False):
         store = str(Path.home() / '.android/debug.keystore') if debug else properties['storeFile']
@@ -47,14 +53,15 @@ def main():
         for name, package in [('wrong-package.apk', 'top.shenyunyao.wrong_player'), ('wrong-abi.apk', 'top.shenyunyao.pikmelo_player')]:
             manifest = directory / 'AndroidManifest.xml'
             manifest.write_text(f'''<manifest xmlns:android="http://schemas.android.com/apk/res/android"
-              package="{package}" android:versionCode="101" android:versionName="1.0.1">
+              package="{package}" android:versionCode="{code}" android:versionName="{version}">
               <uses-sdk android:minSdkVersion="24" android:targetSdkVersion="35" />
               <application android:hasCode="false" android:label="Update validation fixture" />
               </manifest>''', encoding='utf-8')
             unsigned = directory / name
             subprocess.run([aapt, 'package', '-f', '-M', str(manifest), '-I', android, '-F', str(unsigned)], check=True, capture_output=True)
             with zipfile.ZipFile(unsigned, 'a') as archive:
-                archive.writestr('lib/armeabi-v7a/fixture.so', b'validation fixture')
+                incompatible = 'armeabi-v7a' if abi != 'armeabi-v7a' else 'x86_64'
+                archive.writestr(f'lib/{incompatible}/fixture.so', b'validation fixture')
             sign(unsigned, assets / name)
     print('Prepared six APK signature, package, version and architecture cases.')
 

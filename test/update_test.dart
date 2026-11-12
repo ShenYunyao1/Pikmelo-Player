@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -156,6 +157,42 @@ void main() {
       });
       expect(await service.latest(), isNull);
     });
+
+    test('cancelling an active transfer removes its partial file', () async {
+      final released = Completer<void>();
+      final progress = Completer<void>();
+      server.listen((request) async {
+        try {
+          request.response.bufferOutput = false;
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes.take(2).toList());
+          await request.response.flush();
+          await released.future;
+          await request.response.close();
+        } on IOException {
+          /* Cancellation closes the incomplete response. */
+        }
+      });
+      final release = UpdateRelease.fromJson(
+        _manifest(bytes),
+        page: origin,
+        downloadBase: origin,
+      );
+      final transfer = service.download(
+        release,
+        release.select(['x86_64']),
+        root,
+        onProgress: (_) {
+          if (!progress.isCompleted) progress.complete();
+        },
+      );
+      final stopped = expectLater(transfer, throwsA(isA<UpdateCancelled>()));
+      await progress.future;
+      service.cancel();
+      released.complete();
+      await stopped;
+      expect(await root.list().toList(), isEmpty);
+    });
   });
 
   group('Update controller', () {
@@ -200,6 +237,16 @@ void main() {
       expect(platform.operations, ['verify', 'install']);
       expect(controller.phase, UpdatePhase.installing);
       expect(store.setting('pending_app_update'), isNotEmpty);
+    });
+
+    test('duplicate update actions share the active operation', () async {
+      await controller.initialize(storage);
+      await Future.wait([
+        controller.downloadAndInstall(),
+        controller.downloadAndInstall(),
+      ]);
+      expect(service.downloads, 1);
+      expect(platform.operations, ['verify', 'install']);
     });
     test(
       'permission requirement opens settings and avoids premature installation',

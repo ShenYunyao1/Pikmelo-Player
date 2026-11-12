@@ -17,6 +17,11 @@ val instrumentationRuntime by configurations.creating {
     isCanBeConsumed = false
     isTransitive = false
 }
+val copyKotlinForReleaseTests by tasks.registering(Copy::class) {
+    from(instrumentationRuntime)
+    into(layout.buildDirectory.dir("instrumentation-runtime"))
+    rename { "test-kotlin-runtime.jar" }
+}
 
 android {
     namespace = "top.shenyunyao.pikmelo_player"
@@ -38,6 +43,7 @@ android {
         minSdk = 24
         targetSdk = 35
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testProguardFiles("test-proguard-rules.pro")
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
@@ -88,7 +94,7 @@ dependencies {
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     instrumentationRuntime("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
     // Release shrinking removes Kotlin APIs needed only by AndroidJUnitRunner.
-    androidTestImplementation(files(instrumentationRuntime))
+    androidTestImplementation(files(layout.buildDirectory.file("instrumentation-runtime/test-kotlin-runtime.jar")).builtBy(copyKotlinForReleaseTests))
 }
 
 kotlin {

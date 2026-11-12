@@ -54,6 +54,31 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test(
+    'temporarily unavailable document preserves offline authorization',
+    () async {
+      await manager.shutdown();
+      store.saveOfflineMedia(
+        serverUri: uri,
+        expectedGeneration: store.generationFor(uri),
+        trackId: track.id,
+        track: track.toJson(),
+        file: File('${directory.path}/unused'),
+        location: 'content://documents/tree/music/document/song',
+      );
+      store.saveDownloadQueue(uri, track.id, 'completed', 10, null);
+      manager = DownloadManager(
+        store: store,
+        serverUri: uri,
+        cacheDirectory: () async => directory,
+        createClient: () =>
+            PikmeloApiClient(serverUri: uri, apiKey: 'test-key'),
+      );
+      expect(manager.tasks.single.status, DownloadStatus.failed);
+      expect(store.offlineTracks(serverUri: uri), hasLength(1));
+    },
+  );
+
   Future<MediaStorageController> usePolicy({bool mobile = true}) async {
     await manager.shutdown();
     final storage = MediaStorageController(

@@ -32,7 +32,7 @@ flutter build apk --release --split-per-abi
 
 ARM64 包中的主要原生库为 Flutter 引擎约 11.22 MiB、AOT 应用代码约 6.00 MiB、libmpv 约 5.93 MiB、SQLite 约 1.67 MiB。每个 APK 仅包含对应架构，调试 kernel、isolate 快照和 Vulkan 验证库已移除。
 
-ARM64 包通过 apksigner 校验，最低 Android API 为 24，targetSdk 为 35。当前 release 构建沿用工程已有的 Android Debug 测试签名，发布签名按交付阶段配置。
+上述历史包使用 Android Debug 测试签名。2026-11-12 已切换固定正式签名，最低 Android API 为 24，targetSdk 为 35，正式产物由 GitHub Actions 构建并发布到 Releases。签名与更新验收见[自动更新与正式发布计划](自动更新与正式发布计划.md)。
 
 2026-11-12 接入自定义目录与按需播放后重新生成上述三个 release APK，均通过 apksigner 校验。x86_64 release 已在 Android 15 / API 35 模拟器安装并启动，设置页三种移动网络选项与禁止下载设置的进程重启恢复通过。播放与文档目录迁移已由 debug 原生集成用例验证，release 的完整播放及系统控制按 P6 继续验收。
 
