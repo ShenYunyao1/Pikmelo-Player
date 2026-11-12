@@ -43,8 +43,12 @@ def main():
             raise SystemExit(f'Unexpected native architecture for {abi}.')
         filename = f'Pikmelo-Player-{version}-{abi}.apk'
         shutil.copy2(apk, output / filename)
+        checksum = hashlib.sha256()
+        with apk.open('rb') as stream:
+            while chunk := stream.read(1024 * 1024):
+                checksum.update(chunk)
         artifacts.append({'platform': 'android', 'abi': abi, 'name': filename,
-                          'size': apk.stat().st_size, 'sha256': hashlib.file_digest(apk.open('rb'), 'sha256').hexdigest()})
+                          'size': apk.stat().st_size, 'sha256': checksum.hexdigest()})
     manifest = {'schema': 1, 'version': version, 'versionCode': int(build),
                 'packageName': package, 'signerSha256': fingerprint, 'artifacts': artifacts}
     (output / 'updates.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')

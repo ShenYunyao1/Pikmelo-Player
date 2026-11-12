@@ -56,6 +56,33 @@ class UpdateValidationTest {
     @Test fun oldVersionRejected() = verifyAsset("old-version.apk", "版本")
     @Test fun damagedSignatureRejected() = verifyAsset("damaged-signature.apk", "签名")
 
+    @Test fun requestSystemConfirmation() {
+        val file = File(target.filesDir, "updates/valid.apk")
+        file.parentFile!!.mkdirs()
+        instrumentation.context.assets.open("valid.apk").use { source -> file.outputStream().use { source.copyTo(it) } }
+        val plugin = UpdatePlugin()
+        UpdatePlugin::class.java.getDeclaredField("context").apply { isAccessible = true }.set(plugin, target)
+        val launch = target.packageManager.getLaunchIntentForPackage(target.packageName)!!
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        target.startActivity(launch)
+        Thread.sleep(1500)
+        try {
+            val method = UpdatePlugin::class.java.getDeclaredMethod("install", MethodCall::class.java).apply { isAccessible = true }
+            method.invoke(plugin, MethodCall("installUpdate", mapOf("path" to file.path, "size" to file.length(),
+                "sha256" to hash(file.readBytes()), "version" to "1.0.1", "versionCode" to 101, "abi" to "x86_64",
+                "requireUserAction" to true)))
+            val preferences = target.getSharedPreferences("pikmelo_updates", Context.MODE_PRIVATE)
+            for (attempt in 0 until 100) {
+                if (preferences.getString("status", "") == "confirmation") break
+                Thread.sleep(100)
+            }
+            assertEquals("confirmation", preferences.getString("status", ""))
+            println("PackageInstaller requested user confirmation; cancel the system dialog before the automatic-update scenario")
+        } finally {
+            (UpdatePlugin::class.java.getDeclaredField("worker").apply { isAccessible = true }.get(plugin) as ExecutorService).shutdown()
+        }
+    }
+
     private fun snapshot(): JSONObject {
         val result = JSONObject()
         val database = SQLiteDatabase.openDatabase(File(target.filesDir, "PikmeloPlayer/library.sqlite").path, null, SQLiteDatabase.OPEN_READONLY)

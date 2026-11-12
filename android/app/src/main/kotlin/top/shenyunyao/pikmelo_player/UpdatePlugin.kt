@@ -174,7 +174,11 @@ class UpdatePlugin : FlutterPlugin, ActivityAware {
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
             setAppPackageName(context.packageName)
             setSize(apk.length())
-            if (Build.VERSION.SDK_INT >= 31) setRequireUserAction(PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            if (Build.VERSION.SDK_INT >= 31) {
+                // Release instrumentation exercises the system-confirmation fallback with the same APK.
+                setRequireUserAction(if (call.argument<Boolean>("requireUserAction") == true)
+                    PackageInstaller.SessionParams.USER_ACTION_REQUIRED else PackageInstaller.SessionParams.USER_ACTION_NOT_REQUIRED)
+            }
         }
         val sessionId = installer.createSession(params)
         try {
