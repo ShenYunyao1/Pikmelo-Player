@@ -44,6 +44,44 @@ jobs:
         with:
           name: android-release
           path: build/release-assets/*
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.9'
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - name: Package Windows build
+        shell: pwsh
+        run: |
+          $version = [regex]::Match((Get-Content pubspec.yaml -Raw), '(?m)^version:\s*([^+]+)\+').Groups[1].Value.Trim()
+          New-Item -ItemType Directory -Path build/release-assets -Force | Out-Null
+          Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "build/release-assets/Pikmelo-Player-$version-windows-x64.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release
+          path: build/release-assets/*
+
+  publish:
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: '*-release'
+          merge-multiple: true
+          path: build/release-assets
+      - run: python3 tools/finalize_release.py build/release-assets
+      - uses: actions/upload-artifact@v4
+        with:
+          name: verified-release
+          path: build/release-assets/*
       - name: Publish GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         env:

@@ -168,12 +168,9 @@ class GitHubUpdateService {
     IOSink? sink;
     try {
       await directory.create(recursive: true);
-      if (await target.exists() &&
-          await target.length() == artifact.size &&
-          (await sha256.bind(target.openRead()).first).toString() ==
-              artifact.sha256) {
-        return target;
-      }
+      final existing = await cached(artifact, directory);
+      if (generation != _generation || _closed) throw const UpdateCancelled();
+      if (existing != null) return existing;
       if (await target.exists()) await target.delete();
       final response = await _get(
         client,
@@ -211,6 +208,19 @@ class GitHubUpdateService {
       client.close(force: true);
       if (identical(_downloadClient, client)) _downloadClient = null;
     }
+  }
+
+  Future<File?> cached(UpdateArtifact artifact, Directory directory) async {
+    final file = File(
+      '${directory.path}${Platform.pathSeparator}${artifact.name}',
+    );
+    if (await file.exists() &&
+        await file.length() == artifact.size &&
+        (await sha256.bind(file.openRead()).first).toString() ==
+            artifact.sha256) {
+      return file;
+    }
+    return null;
   }
 
   void cancel() {

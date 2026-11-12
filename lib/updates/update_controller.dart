@@ -170,30 +170,37 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
         await platform.openRelease(update.page);
         return;
       }
-      if (!await _allowed()) {
+      final artifact = update.select(abis);
+      final directory = Directory(_info['directory'] as String);
+      phase = UpdatePhase.verifying;
+      _notify();
+      final cached = await service.cached(artifact, directory);
+      if (cached == null && !await _allowed()) {
         throw const FormatException('当前网络策略禁止下载更新，请连接 Wi-Fi 或调整移动网络策略。');
       }
       if (!_current(version)) return;
-      final artifact = update.select(abis);
-      phase = UpdatePhase.downloading;
-      received = 0;
+      phase = cached == null ? UpdatePhase.downloading : UpdatePhase.verifying;
+      received = cached == null ? 0 : artifact.size;
       total = artifact.size;
       message = null;
       _notify();
       var lastProgress = DateTime.fromMillisecondsSinceEpoch(0);
-      final file = await service.download(
-        update,
-        artifact,
-        Directory(_info['directory'] as String),
-        onProgress: (bytes) {
-          received = bytes;
-          if (DateTime.now().difference(lastProgress).inMilliseconds >= 200 ||
-              received == total) {
-            lastProgress = DateTime.now();
-            _notify();
-          }
-        },
-      );
+      final file =
+          cached ??
+          await service.download(
+            update,
+            artifact,
+            directory,
+            onProgress: (bytes) {
+              received = bytes;
+              if (DateTime.now().difference(lastProgress).inMilliseconds >=
+                      200 ||
+                  received == total) {
+                lastProgress = DateTime.now();
+                _notify();
+              }
+            },
+          );
       if (!_current(version)) return;
       phase = UpdatePhase.verifying;
       _notify();

@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/widgets.dart';
 import 'package:pikmelo_player/infrastructure/storage/local_library_store.dart';
 import 'package:pikmelo_player/settings/media_storage_controller.dart';
 import 'package:pikmelo_player/updates/github_update_service.dart';
@@ -210,6 +211,48 @@ void main() {
         expect(controller.phase, UpdatePhase.permission);
       },
     );
+
+    test(
+      'granting installation permission resumes the verified update',
+      () async {
+        platform.permission = false;
+        await controller.initialize(storage);
+        await controller.downloadAndInstall();
+        platform.permission = true;
+        controller.didChangeAppLifecycleState(AppLifecycleState.resumed);
+        for (
+          var attempt = 0;
+          attempt < 100 && !platform.operations.contains('install');
+          attempt++
+        ) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+        expect(platform.operations, [
+          'verify',
+          'permission',
+          'verify',
+          'install',
+        ]);
+      },
+    );
+
+    test('a verified cached APK can be installed when mobile downloads are prohibited', () async {
+      platform.permission = false;
+      await controller.initialize(storage);
+      await controller.downloadAndInstall();
+      platform.permission = true;
+      mobile = true;
+      storage.setMobilePolicy(MobileDownloadPolicy.prohibit);
+      await storage.refreshNetwork();
+      await controller.downloadAndInstall();
+      expect(service.downloads, 1);
+      expect(platform.operations, [
+        'verify',
+        'permission',
+        'verify',
+        'install',
+      ]);
+    });
     test('prohibit cellular policy blocks update downloads', () async {
       mobile = true;
       storage.setMobilePolicy(MobileDownloadPolicy.prohibit);

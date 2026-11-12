@@ -154,8 +154,8 @@ class UpdatePlugin : FlutterPlugin, ActivityAware {
         }
         require(metadata.versionName == call.argument<String>("version")) { "安装包版本名称不符" }
         require(metadata.applicationInfo!!.minSdkVersion <= Build.VERSION.SDK_INT) { "设备系统版本不兼容" }
-        val abi = Build.SUPPORTED_ABIS.firstOrNull { it in supportedArchitectures }
-        require(abi != null && abi == call.argument<String>("abi")) { "安装包架构不兼容" }
+        val abi = call.argument<String>("abi")
+        require(abi in supportedArchitectures && Build.SUPPORTED_ABIS.contains(abi)) { "安装包架构不兼容" }
         ZipFile(apk).use { zip ->
             val architectures = zip.entries().asSequence().map { it.name }.filter { it.startsWith("lib/") && it.endsWith(".so") }
                 .map { it.split('/')[1] }.toSet()
