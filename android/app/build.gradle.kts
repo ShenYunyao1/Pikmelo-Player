@@ -13,6 +13,10 @@ val signingFile = System.getenv("PIKMELO_SIGNING_PROPERTIES")?.let(::file)
 val releaseSigning = Properties()
 if (signingFile.exists()) signingFile.inputStream().use(releaseSigning::load)
 val pinnedCertificate = rootProject.file("release-cert.sha256").readText().trim()
+val instrumentationRuntime by configurations.creating {
+    isCanBeConsumed = false
+    isTransitive = false
+}
 
 android {
     namespace = "top.shenyunyao.pikmelo_player"
@@ -82,6 +86,9 @@ dependencies {
     implementation("com.android.tools.build:apksig:8.11.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    instrumentationRuntime("org.jetbrains.kotlin:kotlin-stdlib:2.2.20")
+    // Release shrinking removes Kotlin APIs needed only by AndroidJUnitRunner.
+    androidTestImplementation(files(instrumentationRuntime))
 }
 
 kotlin {
