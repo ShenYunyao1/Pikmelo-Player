@@ -7,6 +7,7 @@ import '../playback/playback_engine.dart';
 import '../infrastructure/storage/api_key_store.dart';
 import '../infrastructure/storage/local_library_store.dart';
 import '../settings/connection_controller.dart';
+import '../updates/update_controller.dart';
 
 class AppDependencies {
   AppDependencies({
@@ -15,7 +16,10 @@ class AppDependencies {
     ApiClientFactory? createClient,
     PlaybackEngine Function()? createPlaybackEngine,
     this.networkReader,
-  }) : _keyStore = keyStore ?? ApiKeyStore(),
+    bool enableUpdates = true,
+    UpdateController? updateController,
+  }) : updates = enableUpdates ? updateController ?? UpdateController() : null,
+       _keyStore = keyStore ?? ApiKeyStore(),
        _loadStore = openStore ?? (() => LocalLibraryStore.open()),
        _createPlaybackEngine =
            createPlaybackEngine ?? MediaKitPlaybackEngine.new,
@@ -25,6 +29,7 @@ class AppDependencies {
                PikmeloApiClient(serverUri: connection.uri, apiKey: apiKey));
 
   final ApiKeyStore _keyStore;
+  final UpdateController? updates;
   final Future<LocalLibraryStore> Function() _loadStore;
   final ApiClientFactory _createClient;
   final PlaybackEngine Function() _createPlaybackEngine;
@@ -75,6 +80,7 @@ class AppDependencies {
       createClient: _createClient,
       playback: playback,
       networkReader: networkReader,
+      updates: updates,
     );
     _controllers.add(controller);
     return controller;
@@ -83,6 +89,7 @@ class AppDependencies {
   Future<void> dispose() async {
     if (_disposed) return;
     _disposed = true;
+    await updates?.shutdown();
     for (final controller in _controllers) {
       controller.dispose();
     }

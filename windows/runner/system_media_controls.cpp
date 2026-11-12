@@ -6,6 +6,7 @@
 #include <winrt/Windows.Foundation.h>
 #include <winrt/Windows.Networking.Connectivity.h>
 #include <shobjidl.h>
+#include <shellapi.h>
 
 #include <algorithm>
 #include <chrono>
@@ -62,6 +63,27 @@ SystemMediaControls::SystemMediaControls(flutter::BinaryMessenger* messenger,
         const auto value = winrt::to_string(std::wstring_view(path));
         CoTaskMemFree(path);
         result->Success(flutter::EncodableValue(value));
+        return;
+      } else if (call.method_name() == "updateInfo") {
+        flutter::EncodableMap info;
+        info[flutter::EncodableValue("platform")] = flutter::EncodableValue("windows");
+        info[flutter::EncodableValue("version")] = flutter::EncodableValue(FLUTTER_VERSION);
+        info[flutter::EncodableValue("versionCode")] = flutter::EncodableValue(FLUTTER_VERSION_BUILD);
+        info[flutter::EncodableValue("abis")] = flutter::EncodableValue(flutter::EncodableList{flutter::EncodableValue("x86_64")});
+        result->Success(flutter::EncodableValue(info));
+        return;
+      } else if (call.method_name() == "openRelease") {
+        const auto url = Value<std::string>(std::get<flutter::EncodableMap>(*call.arguments()), "url");
+        if (url.rfind("https://github.com/ShenYunyao1/Pikmelo-Player/releases", 0) != 0) {
+          result->Error("update", "Untrusted release URL");
+          return;
+        }
+        const auto response = ShellExecuteW(window_, L"open", winrt::to_hstring(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        if (reinterpret_cast<INT_PTR>(response) <= 32) {
+          result->Error("update", "Unable to open the release page");
+          return;
+        }
+        result->Success();
         return;
       } else if (call.method_name() == "network") {
         const auto profile = winrt::Windows::Networking::Connectivity::

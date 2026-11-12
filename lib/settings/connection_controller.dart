@@ -15,6 +15,7 @@ import '../playback/playback_controller.dart';
 import '../sync/sync_service.dart';
 import 'models/server_connection.dart';
 import 'media_storage_controller.dart';
+import '../updates/update_controller.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
   ServerConnection connection,
@@ -30,6 +31,7 @@ class ConnectionController extends ChangeNotifier {
     this._cacheDirectory,
     this.playback,
     this.networkReader,
+    this.updates,
   }) {
     playback?.resolveSource = _prepareSource;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
@@ -41,6 +43,7 @@ class ConnectionController extends ChangeNotifier {
   final ApiClientFactory _createClient;
   final Future<Directory> Function()? _cacheDirectory;
   final PlaybackController? playback;
+  final UpdateController? updates;
   final Future<Map<String, bool>> Function()? networkReader;
   Future<void> _playbackReset = Future.value();
   DownloadManager? _downloads;
@@ -362,6 +365,7 @@ class ConnectionController extends ChangeNotifier {
     if (mediaStorage != null) return;
     mediaStorage = MediaStorageController(store, networkReader: networkReader);
     mediaStorage!.addListener(_storageChanged);
+    unawaited(updates?.initialize(mediaStorage!) ?? Future.value());
   }
 
   void _storageChanged() {

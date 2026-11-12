@@ -136,6 +136,7 @@ void main() {
       final opening = Completer<LocalLibraryStore>();
       var openCalls = 0;
       final dependencies = AppDependencies(
+        enableUpdates: false,
         networkReader: () async => {'connected': true, 'cellular': false},
         openStore: () {
           openCalls++;
@@ -163,6 +164,7 @@ void main() {
     () async {
       var openCalls = 0;
       final dependencies = AppDependencies(
+        enableUpdates: false,
         networkReader: () async => {'connected': true, 'cellular': false},
         openStore: () {
           openCalls++;
@@ -183,6 +185,7 @@ void main() {
   ) async {
     final uiClient = _ControlledClient();
     final dependencies = AppDependencies(
+      enableUpdates: false,
       networkReader: () async => {'connected': true, 'cellular': false},
       keyStore: _MemoryKeyStore(),
       openStore: () => LocalLibraryStore.open(databasePath: ':memory:'),
@@ -246,6 +249,7 @@ void main() {
   ) async {
     final delayedKeys = _DelayedKeyStore();
     final dependencies = AppDependencies(
+      enableUpdates: false,
       networkReader: () async => {'connected': true, 'cellular': false},
       keyStore: delayedKeys,
       openStore: () => LocalLibraryStore.open(databasePath: ':memory:'),
@@ -442,6 +446,7 @@ void main() {
   ) async {
     final clients = <_ControlledClient>[];
     final dependencies = AppDependencies(
+      enableUpdates: false,
       networkReader: () async => {'connected': true, 'cellular': false},
       keyStore: _MemoryKeyStore(),
       openStore: () => LocalLibraryStore.open(databasePath: ':memory:'),

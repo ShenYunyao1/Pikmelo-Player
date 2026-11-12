@@ -54,3 +54,4 @@ app.*.map.json
 *.pfx
 **/signing.properties
 **/key.properties
+/android/app/src/androidTest/assets/*.apk

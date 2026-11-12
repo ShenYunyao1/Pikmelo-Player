@@ -56,6 +56,7 @@ void main() {
       ]);
       store.close();
       AppDependencies create() => AppDependencies(
+        enableUpdates: false,
         keyStore: _Keys(),
         openStore: () => LocalLibraryStore.open(databasePath: database),
         createClient: (connection, key) =>

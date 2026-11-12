@@ -4,6 +4,7 @@ import '../../downloads/models/download_task.dart';
 import '../connection_controller.dart';
 import '../media_storage_controller.dart';
 import 'connection_card.dart';
+import '../../updates/ui/update_card.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({
@@ -129,6 +130,8 @@ class SettingsView extends StatelessWidget {
               : '支持后台与锁屏播放，断开耳机时暂停',
         ),
       ),
+      if (controller.updates case final updates?)
+        UpdateCard(controller: updates),
       const ListTile(
         leading: Icon(Icons.info_outline),
         title: Text('Pikmelo Player'),

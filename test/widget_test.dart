@@ -11,6 +11,7 @@ void main() {
     tester,
   ) async {
     final dependencies = AppDependencies(
+      enableUpdates: false,
       networkReader: () async => {'connected': true, 'cellular': false},
       keyStore: _Keys(),
       openStore: () => LocalLibraryStore.open(databasePath: ':memory:'),

@@ -9,5 +9,8 @@ class MainActivity : AudioServiceActivity() {
         if (!flutterEngine.plugins.has(MediaStoragePlugin::class.java)) {
             flutterEngine.plugins.add(MediaStoragePlugin())
         }
+        if (!flutterEngine.plugins.has(UpdatePlugin::class.java)) {
+            flutterEngine.plugins.add(UpdatePlugin())
+        }
     }
 }
