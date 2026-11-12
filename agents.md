@@ -57,3 +57,5 @@
 - Android 工程使用 compileSdk 36，满足 flutter_secure_storage 的编译要求；minSdk 24、targetSdk 35，使用 Pikmelo_API_35 模拟器验证。Gradle 8.14.3，调试 APK 构建及安装启动已通过。
 - Android 构建已验证 NDK 28.2.13676358、CMake 3.22.1 和 JDK 21.0.8；当前本机代理监听 7890，构建时为 Java 与 Dart 下载分别传入进程级代理。
 
+
+- 自动更新阶段已完成公开 GitHub 仓库、双平台 Releases、固定正式签名及同机双目录备份。1.0.3 发布成功，103 项测试与静态分析通过。Android API 35 模拟器正式签名 1.0.2 → 1.0.3 覆盖升级、免确认及系统确认路径、配置凭据、媒体播放和目录读写保留通过。Windows 云端包构建校验通过，下载后运行检查被自动审批阻止，实机和 Windows 运行验收继续按 P6 跟进。
