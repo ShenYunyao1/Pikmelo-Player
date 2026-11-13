@@ -27,9 +27,14 @@ class Playlist {
   final List<String> unavailableTrackIds;
 
   String get name => _json['name'] as String? ?? '未命名歌单';
+  String? get description {
+    final value = _json['description'];
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
+  }
+
   String? get coverId {
     final value = _json['cover_id'];
-    return value is String && value.isNotEmpty ? value : null;
+    return value is String && value.trim().isNotEmpty ? value.trim() : null;
   }
 
   bool get readOnly => _json['read_only'] == true;

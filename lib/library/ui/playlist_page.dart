@@ -81,6 +81,13 @@ class PlaylistPage extends StatelessWidget {
                           ),
                         ],
                       ),
+                      if (playlist.description != null) ...[
+                        const SizedBox(height: 12),
+                        SelectableText(
+                          playlist.description!,
+                          style: Theme.of(context).textTheme.bodyMedium,
+                        ),
+                      ],
                       const SizedBox(height: 16),
                       Wrap(
                         spacing: 12,

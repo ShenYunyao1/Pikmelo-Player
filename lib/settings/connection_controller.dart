@@ -164,7 +164,7 @@ class ConnectionController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<Uint8List?> artworkFor(String id, {String? coverId}) {
+  Future<Uint8List?> artworkFor(String id) {
     final library = _library;
     final storage = mediaStorage;
     final scope = _scope;
@@ -186,7 +186,7 @@ class ConnectionController extends ChangeNotifier {
       scope: scope,
       revision: jsonEncode(track.toJson()),
       path: path,
-      coverId: coverId ?? track.coverId,
+      coverId: track.coverId,
       files: storage.store.files,
       retryToken: '${storage.networkRevision}',
       allowed: () =>
@@ -201,35 +201,42 @@ class ConnectionController extends ChangeNotifier {
     );
   }
 
-  Future<Uint8List?> playlistArtwork(String id) {
-    final matches = _playlists.where(
-      (playlist) => playlist.id == id && !playlist.subscriptionInvalid,
-    );
-    if (matches.isEmpty) return Future.value();
-    final playlist = matches.first;
-    final entries = entriesFor(id)
-        .where((entry) => !entry.unavailable && entry.track != null);
-    final coverId = playlist.coverId;
-    if (entries.isNotEmpty) {
-      return artworkFor(entries.first.id, coverId: coverId);
-    }
+  Future<Uint8List?> playlistArtwork(String id) async {
     final scope = _scope;
     final key = _apiKey;
     final storage = mediaStorage;
-    if (scope == null || key == null || storage == null) return Future.value();
-    return _artwork.load(
-      scope: scope,
-      revision: jsonEncode(playlist.toJson()),
-      path: null,
-      coverId: coverId,
-      files: storage.store.files,
-      retryToken: '${storage.networkRevision}',
-      allowed: () =>
-          !_disposed &&
-          _scope == scope &&
-          _playlists.any((p) => p.id == id && !p.subscriptionInvalid),
-      fetchCover: (id) => _fetchArtwork(id, scope, key),
+    if (_disposed || scope == null || key == null || storage == null) {
+      return null;
+    }
+    final matches = _playlists.where(
+      (playlist) => playlist.id == id && !playlist.subscriptionInvalid,
     );
+    if (matches.isEmpty) return null;
+    final playlist = matches.first;
+    final coverId = playlist.coverId;
+    bool allowed() =>
+        !_disposed &&
+        _scope == scope &&
+        _playlists.any(
+          (p) => p.id == id && !p.subscriptionInvalid && p.coverId == coverId,
+        );
+    if (coverId != null) {
+      final bytes = await _artwork.load(
+        scope: scope,
+        revision: jsonEncode(playlist.toJson()),
+        path: null,
+        coverId: coverId,
+        files: storage.store.files,
+        retryToken: '${storage.networkRevision}',
+        allowed: allowed,
+        fetchCover: (id) => _fetchArtwork(id, scope, key),
+      );
+      if (!allowed()) return null;
+      if (bytes != null) return bytes;
+    }
+    final entries = entriesFor(id)
+        .where((entry) => !entry.unavailable && entry.track != null);
+    return entries.isEmpty ? null : artworkFor(entries.first.id);
   }
 
   Future<Uint8List?> _fetchArtwork(String id, String scope, String key) async {

@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
+
 import 'package:flutter/material.dart';
 import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -18,6 +20,7 @@ import 'package:pikmelo_player/library/ui/playlist_page.dart';
 import 'package:pikmelo_player/playback/playback_controller.dart';
 import 'package:pikmelo_player/playback/models/playback_item.dart';
 import 'package:pikmelo_player/library/models/track.dart';
+import 'package:pikmelo_player/library/models/playlist.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -42,6 +45,183 @@ void main() {
     controller.dispose();
     store.close();
   });
+
+  testWidgets('playlist details show the server description', (tester) async {
+    client.playlistFields = {'description': '  服务器上的歌单简介\n第二行内容  '};
+    client.health.complete({'version': 'test'});
+    await tester.runAsync(
+      () => controller.connectAndSync('https://example.com', 'test-key'),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PlaylistPage(
+          controller: controller,
+          playlistId: 'playlist-1',
+          serverKey: ServerConnection.serverKey(controller.serverUri),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('服务器上的歌单简介\n第二行内容'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  test('playlist own cover precedes embedded track cover and remains cached offline', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'pikmelo-playlist-cover-',
+    );
+    const channel = MethodChannel('plugins.flutter.io/path_provider');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (_) async => root.path);
+    try {
+      final embedded = await File(
+        'android/app/src/main/res/mipmap-mdpi/ic_launcher.png',
+      ).readAsBytes();
+      final own = await File(
+        'android/app/src/main/res/mipmap-hdpi/ic_launcher.png',
+      ).readAsBytes();
+      final file = File('${root.path}/track.media');
+      await file.writeAsBytes([
+        73,
+        68,
+        51,
+        4,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        255,
+        251,
+        144,
+        100,
+        ...List.filled(830, 0),
+      ]);
+      replaceMetadata(
+        file,
+        Mp3Metadata()
+          ..pictures = [Picture(embedded, 'image/png', PictureType.coverFront)],
+      );
+      client.trackFields = {'size': await file.length()};
+      client.playlistFields = {'cover_id': 'playlist-cover'};
+      client.covers['playlist-cover'] = own;
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      store.saveOfflineMedia(
+        serverUri: controller.serverUri,
+        expectedGeneration: store.generationFor(controller.serverUri),
+        trackId: 'track-1',
+        track: store.tracks(controller.serverUri).first,
+        file: file,
+      );
+      expect(await controller.playlistArtwork('playlist-1'), own);
+      expect(client.coverCalls, ['playlist-cover']);
+      client.covers.clear();
+      expect(await controller.playlistArtwork('playlist-1'), own);
+      expect(client.coverCalls, ['playlist-cover']);
+      expect(await controller.artworkFor('track-1'), embedded);
+    } finally {
+      controller.dispose();
+      await controller.downloadShutdown;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null);
+      await root.delete(recursive: true);
+    }
+  });
+
+  test('playlist description tolerates missing blank and malformed values', () {
+    for (final value in [null, '', '  ', 42]) {
+      expect(
+        Playlist.fromJson({'id': 'p', 'description': value}).description,
+        isNull,
+      );
+    }
+    expect(
+      Playlist.fromJson({'id': 'p', 'description': '  line one\nline two  '})
+          .description,
+      'line one\nline two',
+    );
+  });
+
+  test(
+    'playlist unavailable or missing own cover falls back to the track cover',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'pikmelo-playlist-fallback-',
+      );
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => root.path);
+      try {
+        final image = await File(
+          'android/app/src/main/res/mipmap-mdpi/ic_launcher.png',
+        ).readAsBytes();
+        client.trackFields = {'cover_id': 'track-cover'};
+        client.playlistFields = {'cover_id': 'unavailable-playlist-cover'};
+        client.covers['track-cover'] = image;
+        client.health.complete({'version': 'test'});
+        await controller.connectAndSync('https://example.com', 'test-key');
+        expect(await controller.playlistArtwork('playlist-1'), image);
+        expect(client.coverCalls, [
+          'unavailable-playlist-cover',
+          'track-cover',
+        ]);
+        client.playlistFields = {};
+        await controller.refresh();
+        expect(await controller.playlistArtwork('playlist-1'), image);
+        expect(client.coverCalls, [
+          'unavailable-playlist-cover',
+          'track-cover',
+        ]);
+      } finally {
+        controller.dispose();
+        await controller.downloadShutdown;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        await root.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'empty playlist uses its own cover and clears a removed cover',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'pikmelo-playlist-empty-',
+      );
+      const channel = MethodChannel('plugins.flutter.io/path_provider');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (_) async => root.path);
+      try {
+        final image = await File(
+          'android/app/src/main/res/mipmap-mdpi/ic_launcher.png',
+        ).readAsBytes();
+        client.playlistFields = {
+          'track_ids': <String>[],
+          'unavailable_track_ids': <String>[],
+          'cover_id': 'empty-cover',
+        };
+        client.covers['empty-cover'] = image;
+        client.health.complete({'version': 'test'});
+        await controller.connectAndSync('https://example.com', 'test-key');
+        expect(controller.entriesFor('playlist-1'), isEmpty);
+        expect(await controller.playlistArtwork('playlist-1'), image);
+        expect(client.coverCalls, ['empty-cover']);
+        client.playlistFields.remove('cover_id');
+        await controller.refresh();
+        expect(await controller.playlistArtwork('playlist-1'), isNull);
+        expect(client.coverCalls, ['empty-cover']);
+      } finally {
+        controller.dispose();
+        await controller.downloadShutdown;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, null);
+        await root.delete(recursive: true);
+      }
+    },
+  );
 
   testWidgets('download status preserves playlist title and action alignment', (
     tester,
@@ -754,6 +934,17 @@ class _ControlledClient extends PikmeloApiClient {
     : super(serverUri: ServerConnection.defaultUri, apiKey: 'test-key');
 
   final String playlistName;
+  Map<String, dynamic> playlistFields = {};
+  Map<String, dynamic> trackFields = {};
+  final covers = <String, Uint8List>{};
+  final coverCalls = <String>[];
+
+  @override
+  Future<Uint8List?> fetchCover(String id) async {
+    coverCalls.add(id);
+    return covers[id];
+  }
+
   Completer<PikmeloSyncPage>? syncPage;
 
   final health = Completer<Map<String, dynamic>>();
@@ -776,7 +967,7 @@ class _ControlledClient extends PikmeloApiClient {
     if (syncPage != null) return syncPage!.future;
     return PikmeloSyncPage(
       changedTracks: [
-        {'id': 'track-1', 'title': 'Song', 'size': 5},
+        {'id': 'track-1', 'title': 'Song', 'size': 5, ...trackFields},
       ],
       playlists: [
         {
@@ -784,6 +975,7 @@ class _ControlledClient extends PikmeloApiClient {
           'name': playlistName,
           'track_ids': ['track-1', 'missing', 'track-1'],
           'unavailable_track_ids': ['missing'],
+          ...playlistFields,
         },
       ],
       deletedTracks: [],
