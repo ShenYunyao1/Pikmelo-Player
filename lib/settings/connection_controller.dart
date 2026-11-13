@@ -9,6 +9,7 @@ import '../infrastructure/server/pikmelo_api_client.dart';
 import '../infrastructure/storage/api_key_store.dart';
 import '../infrastructure/storage/local_library_store.dart';
 import '../library/library_repository.dart';
+import '../library/models/track.dart';
 import '../library/models/playlist.dart';
 import '../library/models/playlist_entry.dart';
 import '../playback/models/playback_item.dart';
@@ -19,6 +20,7 @@ import 'media_storage_controller.dart';
 import '../updates/update_controller.dart';
 import '../artwork/artwork_service.dart';
 import '../playback/playback_session.dart';
+import '../artwork/embedded_resources.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
   ServerConnection connection,
@@ -39,6 +41,9 @@ class ConnectionController extends ChangeNotifier {
     playback?.resolveSource = _prepareSource;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
     playback?.addListener(_playbackChanged);
+    playback?.loadMetadata = (item) => item.serverUri == serverUri
+        ? metadataFor(item.track.id)
+        : Future.value();
     playback?.loadArtwork = (item) => item.serverUri == serverUri
         ? artworkFor(item.track.id)
         : Future.value();
@@ -73,7 +78,79 @@ class ConnectionController extends ChangeNotifier {
   Future<void> _configurationQueue = Future.value();
   Future<void>? _syncFuture;
   Future<RestoredConnection?>? _initialization;
-  final _artwork = ArtworkService();
+  final _embedded = EmbeddedResourceReader();
+  late final _artwork = ArtworkService(readEmbedded: _embedded.read);
+  Future<void>? _metadataWork;
+  bool _metadataAgain = false;
+
+  void _loadLocalMetadata(
+    LocalLibraryStore store,
+    ServerConnection connection,
+  ) {
+    if (_metadataWork != null) {
+      _metadataAgain = true;
+      return;
+    }
+    final scope = _scope;
+    _metadataWork =
+        () async {
+          do {
+            _metadataAgain = false;
+            final rows = store.offlineTracks(serverUri: connection.uri);
+            for (final row in rows) {
+              if (_disposed || scope != _scope) return;
+              final id = row['track_id'] as String;
+              await metadataFor(id);
+            }
+          } while (_metadataAgain && !_disposed && scope == _scope);
+        }().catchError((Object _, StackTrace _) {}).whenComplete(() {
+          _metadataWork = null;
+          if (_metadataAgain && !_disposed && _library != null) {
+            _loadLocalMetadata(store, _connection);
+          }
+        });
+  }
+
+  Future<Track?> metadataFor(String id) async {
+    final scope = _scope;
+    final library = _library;
+    final store = mediaStorage?.store;
+    if (_disposed || library == null || store == null) return null;
+    final path = library.offlineSource(serverUri, id);
+    if (path != null && store.localMetadata(path) == null) {
+      final resource = await _embedded.read(path, store.files);
+      if (_disposed ||
+          scope != _scope ||
+          _library?.offlineSource(serverUri, id) != path) {
+        return null;
+      }
+      final metadata = <String, dynamic>{
+        'artist': null,
+        'album': null,
+        'duration_ms': null,
+        'format': null,
+        'bitrate_kbps': null,
+        'sample_rate': null,
+        'channels': null,
+        'bits_per_sample': null,
+        'genre': null,
+        'comment': null,
+        ...resource.metadata,
+      };
+      if (metadata['title'] == null ||
+          (metadata['title'] as String).trim().isEmpty) {
+        metadata.remove('title');
+      }
+      store.saveLocalMetadata(path, metadata);
+      playback?.updateMetadata(serverUri, library.tracks(serverUri));
+      notifyListeners();
+    }
+    return library
+        .tracks(serverUri)
+        .where((track) => track.id == id)
+        .firstOrNull;
+  }
+
   PlaybackSession? _playbackSession;
   bool get restorePlaybackEnabled =>
       mediaStorage?.store.setting('restore_playback_session') != 'false';
@@ -426,6 +503,8 @@ class ConnectionController extends ChangeNotifier {
       if (error is PikmeloApiException &&
           (error.statusCode == 401 || error.statusCode == 403)) {
         store?.invalidateServer(connection.uri);
+        await _metadataWork;
+        await _embedded.idle;
         await playback?.reconcile();
         _playlists = const [];
       }
@@ -486,10 +565,15 @@ class ConnectionController extends ChangeNotifier {
         serverUri: connection.uri,
       );
     }
+    _loadLocalMetadata(store, connection);
   }
 
   void _downloadsChanged() {
     if (!_disposed) {
+      final storage = mediaStorage;
+      if (storage != null && _library != null) {
+        _loadLocalMetadata(storage.store, _connection);
+      }
       notifyListeners();
       _trimCache();
     }
@@ -650,7 +734,11 @@ class ConnectionController extends ChangeNotifier {
     playback?.removeListener(_playbackChanged);
     _activeClient?.close();
     unawaited(playback?.clear() ?? Future.value());
-    final closing = _detachDownloads();
+    final closing = Future.wait([
+      _detachDownloads(),
+      _metadataWork ?? Future.value(),
+      _embedded.idle,
+    ]).then<void>((_) {});
     mediaStorage?.removeListener(_storageChanged);
     final storage = mediaStorage;
     if (storage != null) {

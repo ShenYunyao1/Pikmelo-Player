@@ -6,6 +6,8 @@ import '../../settings/connection_controller.dart';
 import '../../settings/models/server_connection.dart';
 import '../../shared/widgets/music_artwork.dart';
 import '../models/playlist_entry.dart';
+import 'track_details.dart';
+import '../../playback/ui/playback_controls.dart';
 
 class PlaylistPage extends StatelessWidget {
   const PlaylistPage({
@@ -68,6 +70,12 @@ class PlaylistPage extends StatelessWidget {
                                 Text(
                                   '${entries.length} 首曲目 · ${entries.where((entry) => entry.downloaded).length} 首已下载',
                                 ),
+                                if (entries.isNotEmpty)
+                                  Text(
+                                    playlistDurationLabel(
+                                      entries.map((entry) => entry.track),
+                                    ),
+                                  ),
                               ],
                             ),
                           ),
@@ -154,6 +162,13 @@ class PlaylistPage extends StatelessWidget {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       selected: active,
+                      onLongPress: entry.track == null
+                          ? null
+                          : () => showTrackDetails(
+                              context,
+                              entry.track!,
+                              load: () => controller.metadataFor(entry.id),
+                            ),
                       selectedTileColor: Theme.of(context).colorScheme.primary
                           .withValues(alpha: 0.12),
                       onTap:
@@ -169,13 +184,34 @@ class PlaylistPage extends StatelessWidget {
                               size: 40,
                               artwork: controller.artworkFor(entry.id),
                             ),
-                      title: Text(
-                        entry.track?.title ?? '不可用曲目',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      title: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              entry.track?.title ?? '不可用曲目',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          SizedBox(
+                            width: 52,
+                            child: Text(
+                              entry.track?.duration == null
+                                  ? '—'
+                                  : playbackTime(entry.track!.duration!),
+                              textAlign: TextAlign.end,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
+                        ],
                       ),
                       subtitle: Text(
-                        entry.track?.artist ?? status,
+                        entry.track?.subtitle.isNotEmpty == true
+                            ? entry.track!.subtitle
+                            : status,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),

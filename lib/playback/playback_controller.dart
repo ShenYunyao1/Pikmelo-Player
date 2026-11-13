@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'models/playback_item.dart';
 import 'models/playback_state.dart';
 import 'playback_engine.dart';
+import '../library/models/track.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({
@@ -21,6 +22,7 @@ class PlaybackController extends ChangeNotifier {
   Future<String> Function(PlaybackItem item)? resolveSource;
   VoidCallback? cancelPreparation;
   Future<Uint8List?> Function(PlaybackItem)? loadArtwork;
+  Future<Track?> Function(PlaybackItem)? loadMetadata;
   String? _systemError;
   String? get systemError => _systemError;
 
@@ -63,6 +65,37 @@ class PlaybackController extends ChangeNotifier {
   bool get stopped => _stopped;
   bool get playRequested => _playRequested;
   int get transportRevision => _transportRevision;
+
+  void updateMetadata(Uri serverUri, List<Track> tracks) {
+    if (_disposed) return;
+    final byId = {for (final track in tracks) track.id: track};
+    var changed = false;
+    final replacements = <PlaybackItem, PlaybackItem>{};
+    final queue = _queue.map((item) {
+      final track = item.serverUri == serverUri ? byId[item.track.id] : null;
+      if (track == null || mapEquals(track.toJson(), item.track.toJson())) {
+        return item;
+      }
+      changed = true;
+      final updated = PlaybackItem(
+        serverUri: item.serverUri,
+        track: track,
+        path: item.path,
+      );
+      replacements[item] = updated;
+      return updated;
+    }).toList();
+    if (changed) {
+      _queue = List.unmodifiable(queue);
+      for (var i = 0; i < _history.length; i++) {
+        _history[i] = replacements[_history[i]] ?? _history[i];
+      }
+      for (var i = 0; i < _shuffleBag.length; i++) {
+        _shuffleBag[i] = replacements[_shuffleBag[i]] ?? _shuffleBag[i];
+      }
+      _notify();
+    }
+  }
 
   void restoreQueue(
     List<PlaybackItem> items, {
@@ -193,7 +226,7 @@ class PlaybackController extends ChangeNotifier {
       if (path != item.path) {
         final resolved = PlaybackItem(
           serverUri: item.serverUri,
-          track: item.track,
+          track: _queue[_index].track,
           path: path,
         );
         _queue = List.unmodifiable([..._queue]..[_index] = resolved);

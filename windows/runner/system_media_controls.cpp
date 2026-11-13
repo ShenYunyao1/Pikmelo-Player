@@ -153,6 +153,7 @@ void SystemMediaControls::Update(const flutter::EncodableMap& values) {
   updater.Type(MediaPlaybackType::Music);
   updater.MusicProperties().Title(winrt::to_hstring(Value<std::string>(values, "title")));
   updater.MusicProperties().Artist(winrt::to_hstring(Value<std::string>(values, "artist")));
+  updater.MusicProperties().AlbumTitle(winrt::to_hstring(Value<std::string>(values, "album")));
   updater.Update();
   controls_.PlaybackStatus(Value<bool>(values, "playing")
                                ? MediaPlaybackStatus::Playing

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../shared/widgets/music_artwork.dart';
 import '../playback_controller.dart';
+import '../../library/ui/track_details.dart';
+import 'playback_controls.dart';
 
 Future<void> showPlaybackQueue(
   BuildContext context,
@@ -81,7 +83,13 @@ class QueueContents extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                       ),
                       subtitle: Text(
-                        item.track.artist ?? '本地音频',
+                        [
+                          item.track.subtitle.isEmpty
+                              ? '未知歌手'
+                              : item.track.subtitle,
+                          if (item.track.duration != null)
+                            playbackTime(item.track.duration!),
+                        ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -98,6 +106,14 @@ class QueueContents extends StatelessWidget {
                               );
                               if (currentIndex < 0) return;
                               switch (action) {
+                                case 'details':
+                                  showTrackDetails(
+                                    context,
+                                    item.track,
+                                    load: controller.loadMetadata == null
+                                        ? null
+                                        : () => controller.loadMetadata!(item),
+                                  );
                                 case 'up':
                                   controller.move(
                                     currentIndex,
@@ -113,6 +129,10 @@ class QueueContents extends StatelessWidget {
                               }
                             },
                             itemBuilder: (_) => [
+                              const PopupMenuItem(
+                                value: 'details',
+                                child: Text('曲目信息'),
+                              ),
                               if (index > 0)
                                 const PopupMenuItem(
                                   value: 'up',

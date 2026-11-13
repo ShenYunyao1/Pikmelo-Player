@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:audio_metadata_reader/audio_metadata_reader.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pikmelo_player/app/app_dependencies.dart';
 import 'package:pikmelo_player/app/pikmelo_app.dart';
@@ -128,6 +129,84 @@ void main() {
     await controller.downloadShutdown;
     await second.shutdown();
   });
+
+  test(
+    'downloaded metadata is parsed locally without another server request',
+    () async {
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      final root = await Directory.systemTemp.createTemp('pikmelo-local-tags-');
+      try {
+        final file = File('${root.path}/audio.media');
+        await file.writeAsBytes([
+          73,
+          68,
+          51,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          255,
+          251,
+          144,
+          100,
+          ...List.filled(830, 0),
+        ]);
+        replaceMetadata(
+          file,
+          Mp3Metadata()
+            ..album = 'Local Album'
+            ..leadPerformer = 'Local Artist'
+            ..songName = 'Local Song',
+        );
+        final data = {
+          'id': 'track-1',
+          'title': 'Stale title',
+          'album': 'Stale album',
+          'bits_per_sample': 24,
+          'size': await file.length(),
+        };
+        store.applySyncPages(controller.serverUri, [
+          PikmeloSyncPage(
+            changedTracks: [data],
+            playlists: [],
+            deletedTracks: [],
+            deletedPlaylists: [],
+            cursor: 'updated',
+            hasMore: false,
+            fullSnapshot: false,
+            reset: false,
+            revision: 2,
+          ),
+        ]);
+        store.saveOfflineMedia(
+          serverUri: controller.serverUri,
+          expectedGeneration: store.generationFor(controller.serverUri),
+          trackId: 'track-1',
+          track: data,
+          file: file,
+        );
+        final local = await controller.metadataFor('track-1');
+        expect(local?.album, 'Local Album');
+        expect(local?.artist, 'Local Artist');
+        expect(local?.title, 'Local Song');
+        expect(local?.format, 'mp3');
+        expect(local?.bitsPerSample, isNull);
+        expect(local?.parsedLocally, isTrue);
+        expect(client.syncCalls, 1);
+        expect(client.healthCalls, 1);
+        expect(
+          controller.entriesFor('playlist-1').first.track?.album,
+          'Local Album',
+        );
+      } finally {
+        await root.delete(recursive: true);
+      }
+    },
+  );
 
   test('controller connects once and exposes typed playlists', () async {
     final pending = controller.connectAndSync(

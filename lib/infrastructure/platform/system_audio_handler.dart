@@ -47,6 +47,8 @@ class SystemAudioHandler extends BaseAudioHandler {
             id: '${controller.queue[index].serverUri}#${controller.queue[index].track.id}#$index',
             title: controller.queue[index].track.title,
             artist: controller.queue[index].track.artist,
+            album: controller.queue[index].track.album,
+            duration: controller.queue[index].track.duration,
           ),
       ]);
     }
@@ -64,7 +66,9 @@ class SystemAudioHandler extends BaseAudioHandler {
     final item = current == null
         ? null
         : queue.value[index].copyWith(
-            duration: state.duration,
+            duration: state.duration > Duration.zero
+                ? state.duration
+                : current.track.duration,
             artUri: _artworkUri,
           );
     final previous = mediaItem.value;
@@ -72,6 +76,7 @@ class SystemAudioHandler extends BaseAudioHandler {
         previous?.duration != item?.duration ||
         previous?.title != item?.title ||
         previous?.artist != item?.artist ||
+        previous?.album != item?.album ||
         previous?.artUri != item?.artUri) {
       mediaItem.add(item);
     }

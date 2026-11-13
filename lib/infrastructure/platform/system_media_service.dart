@@ -85,6 +85,7 @@ class SystemMediaService {
                   state.processingState != AudioProcessingState.idle,
               'title': item?.title ?? '',
               'artist': item?.artist ?? '',
+              'album': item?.album ?? '',
               'playing': state.playing,
               'duration': item?.duration?.inMilliseconds ?? 0,
               'position': state.updatePosition.inMilliseconds,

@@ -4,6 +4,7 @@ import '../../shared/widgets/music_artwork.dart';
 import '../playback_controller.dart';
 import 'playback_controls.dart';
 import 'queue_page.dart';
+import '../../library/ui/track_details.dart';
 
 class NowPlayingPage extends StatelessWidget {
   const NowPlayingPage({super.key, required this.controller});
@@ -28,6 +29,15 @@ class NowPlayingPage extends StatelessWidget {
               tooltip: '播放选项',
               onSelected: (value) {
                 if (value == 'stop') controller.stop();
+                if (value == 'details' && item != null) {
+                  showTrackDetails(
+                    context,
+                    item.track,
+                    load: controller.loadMetadata == null
+                        ? null
+                        : () => controller.loadMetadata!(item),
+                  );
+                }
                 if (value == 'volume') {
                   showModalBottomSheet<void>(
                     context: context,
@@ -57,9 +67,11 @@ class NowPlayingPage extends StatelessWidget {
                   );
                 }
               },
-              itemBuilder: (_) => const [
-                PopupMenuItem(value: 'volume', child: Text('音量')),
-                PopupMenuItem(value: 'stop', child: Text('停止播放')),
+              itemBuilder: (_) => [
+                if (item != null)
+                  const PopupMenuItem(value: 'details', child: Text('曲目信息')),
+                const PopupMenuItem(value: 'volume', child: Text('音量')),
+                const PopupMenuItem(value: 'stop', child: Text('停止播放')),
               ],
             ),
           ],
@@ -102,6 +114,20 @@ class NowPlayingPage extends StatelessWidget {
                                         .textTheme
                                         .bodyLarge,
                                   ),
+                                Visibility(
+                                  visible: item.track.album != null,
+                                  maintainState: true,
+                                  maintainAnimation: true,
+                                  maintainSize: true,
+                                  child: Text(
+                                    item.track.album ?? '专辑',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .bodyMedium,
+                                  ),
+                                ),
                                 const SizedBox(height: 12),
                                 Text(
                                   controller.loading ||

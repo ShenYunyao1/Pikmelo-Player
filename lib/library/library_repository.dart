@@ -13,8 +13,28 @@ class LibraryRepository {
   List<Playlist> playlists(Uri serverUri) =>
       List.unmodifiable(_store.playlists(serverUri).map(Playlist.fromJson));
 
-  List<Track> tracks(Uri serverUri) =>
-      List.unmodifiable(_store.tracks(serverUri).map(Track.fromJson));
+  List<Track> tracks(Uri serverUri) {
+    final offline = {
+      for (final row in _store.offlineTracks(serverUri: serverUri))
+        row['track_id'] as String: row['file_path'] as String,
+    };
+    return List.unmodifiable(
+      _store.tracks(serverUri).map((json) {
+        final track = Track.fromJson(json);
+        final path = offline[track.id];
+        final local =
+            path != null &&
+                !track.missing &&
+                !track.removed &&
+                _store.files.exists(path, track.size)
+            ? _store.localMetadata(path)
+            : null;
+        return local == null
+            ? track
+            : Track.fromJson({...json, ...local, '_local_metadata': true});
+      }),
+    );
+  }
 
   String? offlineSource(Uri uri, String id) {
     final row = _store.offlineMedia(uri, id);

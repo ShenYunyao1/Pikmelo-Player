@@ -16,6 +16,23 @@ class MediaFiles {
   static const android = MethodChannel('pikmelo/media_storage');
   static const windows = MethodChannel('pikmelo/system_media');
   final _documentSizes = <String, int>{};
+  final _reads = <String, Set<Future<void>>>{};
+  final _deleting = <String>{};
+
+  Future<T> readSafely<T>(String path, Future<T> Function() operation) {
+    if (_deleting.contains(path)) {
+      throw FileSystemException('Media is being deleted', path);
+    }
+    final work = Future.sync(operation);
+    final done = work.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    final reads = _reads.putIfAbsent(path, () => {});
+    reads.add(done);
+    done.then((_) {
+      reads.remove(done);
+      if (reads.isEmpty) _reads.remove(path);
+    });
+    return work;
+  }
 
   int length(String path) =>
       isDocument(path) ? _documentSizes[path] ?? 0 : File(path).lengthSync();
@@ -61,12 +78,18 @@ class MediaFiles {
   }
 
   Future<void> delete(String path) async {
-    if (isDocument(path)) {
-      await android.invokeMethod<void>('delete', {'path': path});
-      _documentSizes.remove(path);
-    } else {
-      final file = File(path);
-      if (await file.exists()) await file.delete();
+    _deleting.add(path);
+    try {
+      await Future.wait(_reads[path]?.toList() ?? <Future<void>>[]);
+      if (isDocument(path)) {
+        await android.invokeMethod<void>('delete', {'path': path});
+        _documentSizes.remove(path);
+      } else {
+        final file = File(path);
+        if (await file.exists()) await file.delete();
+      }
+    } finally {
+      _deleting.remove(path);
     }
   }
 

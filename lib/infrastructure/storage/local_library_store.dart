@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 import 'package:path_provider/path_provider.dart';
 import 'package:sqlite3/sqlite3.dart';
 
@@ -13,6 +15,37 @@ class LocalLibraryStore {
 
   final Database _database;
   final files = MediaFiles();
+
+  String _metadataKey(String path) =>
+      'local_metadata_${sha256.convert(utf8.encode(path))}';
+  String _metadataFingerprint(String path) {
+    if (files.isDocument(path)) return '${files.length(path)}';
+    final stat = FileStat.statSync(path);
+    return '${stat.size}|${stat.modified.microsecondsSinceEpoch}';
+  }
+
+  Map<String, dynamic>? localMetadata(String path) {
+    try {
+      final raw = setting(_metadataKey(path));
+      if (raw == null) return null;
+      final value = jsonDecode(raw) as Map;
+      if (value['schema'] != 1) return null;
+      if (value['fingerprint'] != _metadataFingerprint(path)) return null;
+      return Map<String, dynamic>.from(value['metadata'] as Map);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void saveLocalMetadata(String path, Map<String, dynamic> metadata) =>
+      saveSetting(
+        _metadataKey(path),
+        jsonEncode({
+          'schema': 1,
+          'fingerprint': _metadataFingerprint(path),
+          'metadata': metadata,
+        }),
+      );
 
   static Future<LocalLibraryStore> open({String? databasePath}) async {
     final path = databasePath ?? await _defaultDatabasePath();
@@ -576,10 +609,14 @@ class LocalLibraryStore {
       .map((row) => row['path'] as String)
       .toList();
 
-  void completeFileDeletion(String path) => _database.execute(
-    'DELETE FROM pending_file_deletions WHERE path = ?',
-    [path],
-  );
+  void completeFileDeletion(String path) {
+    _database.execute('DELETE FROM pending_file_deletions WHERE path = ?', [
+      path,
+    ]);
+    _database.execute('DELETE FROM app_settings WHERE key = ?', [
+      _metadataKey(path),
+    ]);
+  }
 
   List<Map<String, Object?>> offlineTracks({
     Uri? serverUri,

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../downloads/ui/downloads_page.dart';
 import '../../playback/ui/player_bar.dart';
+import '../../playback/ui/playback_controls.dart';
 import '../../playback/ui/queue_page.dart';
 import '../../settings/connection_controller.dart';
 import '../../settings/models/server_connection.dart';
@@ -235,7 +236,10 @@ class _LibraryPageState extends State<LibraryPage> {
           visible.any(
             (entry) =>
                 (entry.track?.title.toLowerCase().contains(query) ?? false) ||
-                (entry.track?.artist?.toLowerCase().contains(query) ?? false),
+                ((entry.track?.artist?.toLowerCase().contains(query) ??
+                        false) ||
+                    (entry.track?.album?.toLowerCase().contains(query) ??
+                        false)),
           );
     }).toList();
     final hasSelection =
@@ -302,6 +306,9 @@ class _LibraryPageState extends State<LibraryPage> {
                               child: LayoutBuilder(
                                 builder: (context, box) => MusicArtwork(
                                   title: playlist.name,
+                                  artwork: controller.playlistArtwork(
+                                    playlist.id,
+                                  ),
                                   size: box.maxWidth,
                                 ),
                               ),
@@ -407,7 +414,8 @@ class _LibraryPageState extends State<LibraryPage> {
       for (final entry in widget.controller.entriesFor(playlist.id)) {
         if (_downloadedOnly && !entry.downloaded) continue;
         if ((entry.track?.title.toLowerCase().contains(query) ?? false) ||
-            (entry.track?.artist?.toLowerCase().contains(query) ?? false)) {
+            ((entry.track?.artist?.toLowerCase().contains(query) ?? false) ||
+                (entry.track?.album?.toLowerCase().contains(query) ?? false))) {
           tracks.putIfAbsent(
             entry.id,
             () => (playlist: playlist, entry: entry),
@@ -444,9 +452,24 @@ class _LibraryPageState extends State<LibraryPage> {
             size: 44,
             artwork: widget.controller.artworkFor(entry.id),
           ),
-          title: Text(entry.track!.title),
+          title: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  entry.track!.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              if (entry.track!.duration != null)
+                Text(
+                  playbackTime(entry.track!.duration!),
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+            ],
+          ),
           subtitle: Text(
-            '${entry.track!.artist ?? match.playlist.name} · ${entry.downloaded ? '已下载' : '未下载'}',
+            '${entry.track!.subtitle.isEmpty ? match.playlist.name : entry.track!.subtitle} · ${entry.downloaded ? '已下载' : '未下载'}',
           ),
           onTap:
               (entry.downloaded || entry.canDownload) && !widget.controller.busy

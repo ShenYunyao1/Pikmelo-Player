@@ -31,6 +31,7 @@ class Playlist {
     final value = _json['cover_id'];
     return value is String && value.isNotEmpty ? value : null;
   }
+
   bool get readOnly => _json['read_only'] == true;
   bool get subscriptionInvalid => _json['subscription_status'] == 'invalid';
 

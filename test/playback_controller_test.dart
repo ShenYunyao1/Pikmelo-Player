@@ -132,6 +132,54 @@ void main() {
     },
   );
 
+  test(
+    'metadata refresh preserves shuffle history and the active engine',
+    () async {
+      await controller.playQueue(items);
+      controller.setMode(PlaybackMode.shuffle);
+      await controller.next();
+      final count = engines.length;
+      controller.updateMetadata(
+        items.first.serverUri,
+        items
+            .map(
+              (item) => Track.fromJson({
+                ...item.track.toJson(),
+                'album': 'Local album',
+              }),
+            )
+            .toList(),
+      );
+      expect(engines.length, count);
+      expect(controller.current?.track.album, 'Local album');
+      await controller.previous();
+      expect(controller.current?.track.id, items.first.track.id);
+    },
+  );
+
+  test('metadata arriving during source preparation survives the resolved path update', () async {
+    final source = Completer<String>();
+    controller.resolveSource = (_) => source.future;
+    final opening = controller.playQueue(items);
+    await _tick();
+    controller.updateMetadata(
+      items.first.serverUri,
+      items
+          .map(
+            (item) => Track.fromJson({
+              ...item.track.toJson(),
+              'album': 'Local album',
+            }),
+          )
+          .toList(),
+    );
+    source.complete('/fresh.media');
+    await opening;
+    expect(controller.current?.path, '/fresh.media');
+    expect(controller.current?.track.album, 'Local album');
+    expect(engines.single.played, isTrue);
+  });
+
   test('queue supports pause, seek, volume and previous/next', () async {
     await controller.playQueue(items, index: 1);
     expect(controller.current, items[1]);
