@@ -161,24 +161,71 @@ class NowPlayingPage extends StatelessWidget {
                                     maxLines: 1,
                                   ),
                                   const SizedBox(height: 8),
-                                  Row(
-                                    children: [
-                                      VolumeButton(controller: controller),
-                                      Expanded(
-                                        child: TransportControls(
-                                          controller: controller,
-                                          expanded: true,
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: '播放队列',
-                                        icon: const Icon(Icons.queue_music),
-                                        onPressed: () => showPlaybackQueue(
-                                          context,
-                                          controller,
-                                        ),
-                                      ),
-                                    ],
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final extent =
+                                          ((constraints.maxWidth - 64) / 6)
+                                              .clamp(0.0, 48.0);
+                                      return Row(
+                                        children: [
+                                          SizedBox(
+                                            width: extent * 2,
+                                            child: Row(
+                                              children: [
+                                                SizedBox(
+                                                  width: extent,
+                                                  child: VolumeButton(
+                                                    controller: controller,
+                                                  ),
+                                                ),
+                                                SizedBox(
+                                                  width: extent,
+                                                  child: PlaybackModeButton(
+                                                    controller: controller,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: TransportControls(
+                                              controller: controller,
+                                              expanded: true,
+                                              showMode: false,
+                                              buttonExtent: extent,
+                                            ),
+                                          ),
+                                          SizedBox(
+                                            width: extent * 2,
+                                            child: Row(
+                                              children: [
+                                                SizedBox(
+                                                  width: extent,
+                                                  child: IconButton(
+                                                    tooltip: '播放队列',
+                                                    icon: const Icon(
+                                                      Icons.queue_music,
+                                                    ),
+                                                    onPressed: () =>
+                                                        showPlaybackQueue(
+                                                          context,
+                                                          controller,
+                                                        ),
+                                                  ),
+                                                ),
+                                                SizedBox(
+                                                  key: const ValueKey(
+                                                    'player-action-placeholder',
+                                                  ),
+                                                  width: extent,
+                                                  height: 48,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                               ),

@@ -67,6 +67,52 @@ void main() {
   });
 
   testWidgets(
+    'transport trio is centered with symmetric action slots at every width',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      await tester.runAsync(() => controller.playQueue([item]));
+      for (final size in [
+        const Size(320, 640),
+        const Size(360, 780),
+        const Size(390, 844),
+        const Size(640, 360),
+        const Size(1280, 800),
+      ]) {
+        tester.view.physicalSize = size;
+        await tester.pumpWidget(
+          MaterialApp(home: NowPlayingPage(controller: controller)),
+        );
+        await tester.pumpAndSettle();
+        final play = tester.getCenter(find.byTooltip('暂停'));
+        final previous = tester.getCenter(find.byTooltip('上一首'));
+        final next = tester.getCenter(find.byTooltip('下一首'));
+        expect(play.dx, closeTo(size.width / 2, 0.1));
+        expect(
+          tester
+              .getSize(find.byKey(const ValueKey('player-action-placeholder')))
+              .width,
+          tester.getSize(find.byTooltip('音量')).width,
+        );
+        expect(play.dx - previous.dx, closeTo(next.dx - play.dx, 0.1));
+        expect(previous.dy, play.dy);
+        expect(next.dy, play.dy);
+        expect(
+          tester.getCenter(find.byTooltip('顺序播放')).dx,
+          lessThan(previous.dx),
+        );
+        expect(
+          tester.getCenter(find.byTooltip('播放队列')).dx,
+          greaterThan(next.dx),
+        );
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
     'player controls are bottom anchored with one queue entry and bitrate',
     (tester) async {
       tester.view.physicalSize = const Size(390, 844);

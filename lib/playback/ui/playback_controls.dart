@@ -70,34 +70,31 @@ class TransportControls extends StatelessWidget {
     super.key,
     required this.controller,
     this.expanded = false,
+    this.showMode = true,
+    this.buttonExtent,
   });
   final PlaybackController controller;
   final bool expanded;
+  final bool showMode;
+  final double? buttonExtent;
   @override
   Widget build(BuildContext context) {
     final player = controller;
-    final (label, icon) = switch (player.mode) {
-      PlaybackMode.sequence => ('顺序播放', Icons.playlist_play),
-      PlaybackMode.repeatAll => ('列表循环', Icons.repeat),
-      PlaybackMode.repeatOne => ('单曲循环', Icons.repeat_one),
-      PlaybackMode.shuffle => ('随机播放', Icons.shuffle),
-    };
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        if (expanded)
-          IconButton(
-            tooltip: label,
-            icon: Icon(icon),
-            onPressed: () => player.setMode(
-              PlaybackMode.values[(player.mode.index + 1) %
-                  PlaybackMode.values.length],
-            ),
+        if (expanded && showMode)
+          SizedBox(
+            width: buttonExtent,
+            child: PlaybackModeButton(controller: controller),
           ),
-        IconButton(
-          tooltip: '上一首',
-          icon: const Icon(Icons.skip_previous_rounded),
-          onPressed: player.queue.isEmpty ? null : player.previous,
+        SizedBox(
+          width: buttonExtent,
+          child: IconButton(
+            tooltip: '上一首',
+            icon: const Icon(Icons.skip_previous_rounded),
+            onPressed: player.queue.isEmpty ? null : player.previous,
+          ),
         ),
         if (!expanded) const SizedBox(width: 8),
         IconButton.filled(
@@ -114,12 +111,38 @@ class TransportControls extends StatelessWidget {
           ),
         ),
         if (!expanded) const SizedBox(width: 8),
-        IconButton(
-          tooltip: '下一首',
-          icon: const Icon(Icons.skip_next_rounded),
-          onPressed: player.queue.isEmpty ? null : player.next,
+        SizedBox(
+          width: buttonExtent,
+          child: IconButton(
+            tooltip: '下一首',
+            icon: const Icon(Icons.skip_next_rounded),
+            onPressed: player.queue.isEmpty ? null : player.next,
+          ),
         ),
       ],
+    );
+  }
+}
+
+class PlaybackModeButton extends StatelessWidget {
+  const PlaybackModeButton({super.key, required this.controller});
+  final PlaybackController controller;
+  @override
+  Widget build(BuildContext context) {
+    final player = controller;
+    final (label, icon) = switch (player.mode) {
+      PlaybackMode.sequence => ('顺序播放', Icons.playlist_play),
+      PlaybackMode.repeatAll => ('列表循环', Icons.repeat),
+      PlaybackMode.repeatOne => ('单曲循环', Icons.repeat_one),
+      PlaybackMode.shuffle => ('随机播放', Icons.shuffle),
+    };
+    return IconButton(
+      tooltip: label,
+      icon: Icon(icon),
+      onPressed: () => player.setMode(
+        PlaybackMode.values[(player.mode.index + 1) %
+            PlaybackMode.values.length],
+      ),
     );
   }
 }
