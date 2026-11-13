@@ -110,6 +110,52 @@ void main() {
     },
   );
 
+  testWidgets('time label digit changes keep slider bounds stable', (
+    tester,
+  ) async {
+    await tester.runAsync(() => controller.playQueue([item]));
+    engines.single._emit(
+      engines.single._state.copyWith(duration: const Duration(minutes: 120)),
+    );
+    for (final scale in [1.0, 1.8]) {
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(
+            textTheme: const TextTheme(
+              labelSmall: TextStyle(fontSize: 11, fontFamily: 'Arial'),
+            ),
+          ),
+          home: MediaQuery(
+            data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+            child: Scaffold(
+              body: Align(
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: 320,
+                  height: 80,
+                  child: PlaybackProgress(controller: controller),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      Rect? reference;
+      for (final seconds in [1, 8, 11, 59, 60, 599, 600, 3599, 3600, 7199]) {
+        engines.single._emit(
+          engines.single._state.copyWith(position: Duration(seconds: seconds)),
+        );
+        await tester.pump();
+        final bounds = tester.getRect(find.byType(Slider));
+        reference ??= bounds;
+        expect(bounds, reference, reason: 'position $seconds, scale $scale');
+      }
+      expect(tester.takeException(), isNull);
+    }
+    await tester.pumpWidget(const SizedBox());
+  });
+
   for (final surface in ['page', 'bar', 'queue']) {
     testWidgets('$surface progress refreshes reuse the artwork request', (
       tester,

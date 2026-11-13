@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../models/playback_item.dart';
@@ -19,6 +21,8 @@ class PlaybackProgress extends StatefulWidget {
 class _PlaybackProgressState extends State<PlaybackProgress> {
   double? _drag;
   PlaybackItem? _item;
+  Object? _timeMeasurement;
+  double _timeLabelWidth = 0;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: widget.controller,
@@ -35,11 +39,48 @@ class _PlaybackProgressState extends State<PlaybackProgress> {
     final enabled = total > 0 && !player.loading;
     final position = (_drag ?? player.state.position.inMilliseconds.toDouble())
         .clamp(0.0, total > 0 ? total : 1.0);
+    final baseStyle = DefaultTextStyle.of(context).style
+        .merge(Theme.of(context).textTheme.labelSmall);
+    final timeStyle = baseStyle.copyWith(
+      fontFeatures: [
+        ...?baseStyle.fontFeatures,
+        const FontFeature.tabularFigures(),
+      ],
+    );
+    final scaler = MediaQuery.textScalerOf(context);
+    final direction = Directionality.of(context);
+    final locale = Localizations.maybeLocaleOf(context);
+    final digits = playbackTime(player.state.duration).length - 1;
+    final measurement = (timeStyle, scaler, direction, locale, digits);
+    if (_timeMeasurement != measurement) {
+      final painter = TextPainter(
+        textDirection: direction,
+        textScaler: scaler,
+        locale: locale,
+      );
+      final widths = <double>[];
+      for (final character in '0123456789:'.split('')) {
+        painter.text = TextSpan(text: character, style: timeStyle);
+        painter.layout();
+        widths.add(painter.width);
+      }
+      painter.dispose();
+      _timeLabelWidth =
+          (widths.take(10).reduce(math.max) * digits + widths.last)
+              .ceilToDouble();
+      _timeMeasurement = measurement;
+    }
     return Row(
       children: [
-        Text(
-          playbackTime(Duration(milliseconds: position.toInt())),
-          style: Theme.of(context).textTheme.labelSmall,
+        SizedBox(
+          width: _timeLabelWidth,
+          child: Text(
+            playbackTime(Duration(milliseconds: position.toInt())),
+            style: timeStyle,
+            textAlign: TextAlign.start,
+            maxLines: 1,
+            softWrap: false,
+          ),
         ),
         Expanded(
           child: Slider(
@@ -61,9 +102,15 @@ class _PlaybackProgressState extends State<PlaybackProgress> {
                 : null,
           ),
         ),
-        Text(
-          playbackTime(player.state.duration),
-          style: Theme.of(context).textTheme.labelSmall,
+        SizedBox(
+          width: _timeLabelWidth,
+          child: Text(
+            playbackTime(player.state.duration),
+            style: timeStyle,
+            textAlign: TextAlign.end,
+            maxLines: 1,
+            softWrap: false,
+          ),
         ),
       ],
     );
