@@ -27,6 +27,7 @@ class _LibraryPageState extends State<LibraryPage> {
   );
   final _keyController = TextEditingController();
   final _searchController = TextEditingController();
+  final _searchFocus = FocusNode();
   int _destination = 0;
   bool _downloadedOnly = false;
   bool _showQueue = true;
@@ -73,6 +74,7 @@ class _LibraryPageState extends State<LibraryPage> {
     _serverController.dispose();
     _keyController.dispose();
     _searchController.dispose();
+    _searchFocus.dispose();
     super.dispose();
   }
 
@@ -358,9 +360,21 @@ class _LibraryPageState extends State<LibraryPage> {
               const SizedBox(height: 16),
               TextField(
                 controller: _searchController,
-                decoration: const InputDecoration(
-                  hintText: '搜索歌单、曲目或歌手',
-                  prefixIcon: Icon(Icons.search),
+                focusNode: _searchFocus,
+                decoration: InputDecoration(
+                  hintText: '搜索歌单、曲目、歌手或专辑',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.isEmpty
+                      ? null
+                      : IconButton(
+                          tooltip: '清除搜索',
+                          icon: const Icon(Icons.clear),
+                          onPressed: () => setState(() {
+                            _searchController.clear();
+                            _query = '';
+                            _searchFocus.requestFocus();
+                          }),
+                        ),
                   isDense: true,
                 ),
                 onChanged: (value) => setState(() => _query = value),

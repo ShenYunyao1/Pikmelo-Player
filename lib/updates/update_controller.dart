@@ -23,6 +23,8 @@ enum UpdatePhase {
   failed,
 }
 
+enum MobileUpdatePolicy { wifiOnly, allow }
+
 class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   UpdateController({GitHubUpdateService? service, UpdatePlatform? platform})
     : service = service ?? GitHubUpdateService(),
@@ -38,6 +40,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   UpdatePhase phase = UpdatePhase.idle;
   String? message;
   bool automatic = true;
+  MobileUpdatePolicy mobilePolicy = MobileUpdatePolicy.wifiOnly;
   int received = 0;
   int total = 0;
   int _revision = 0;
@@ -75,6 +78,16 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
       await _storage!.ready;
       if (_closed) return;
       automatic = _storage!.store.setting('automatic_updates') != 'false';
+      final store = _storage!.store;
+      final policy = store.setting('mobile_update_policy');
+      mobilePolicy =
+          policy == MobileUpdatePolicy.allow.name ||
+              (policy == null &&
+                  store.setting('mobile_download_policy') ==
+                      MobileDownloadPolicy.allow.name)
+          ? MobileUpdatePolicy.allow
+          : MobileUpdatePolicy.wifiOnly;
+      store.saveSetting('mobile_update_policy', mobilePolicy.name);
       _info = await platform.info();
       service.proxy = _info['proxy'] as String?;
       if (_closed) return;
@@ -108,6 +121,22 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
     } catch (error) {
       _failure(error);
     }
+  }
+
+  void setMobilePolicy(MobileUpdatePolicy value) {
+    if (_closed || !initialized || mobilePolicy == value) return;
+    mobilePolicy = value;
+    _storage!.store.saveSetting('mobile_update_policy', value.name);
+    _networkChanged();
+    _notify();
+  }
+
+  bool get _networkAllowed {
+    final storage = _storage;
+    return storage != null &&
+        storage.networkKnown &&
+        storage.connected &&
+        (!storage.cellular || mobilePolicy == MobileUpdatePolicy.allow);
   }
 
   void setAutomatic(bool value) {
@@ -243,13 +272,11 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   Future<bool> _allowed() async {
     final storage = _storage!;
     await storage.refreshNetwork();
-    return storage.allows(DownloadPurpose.manual);
+    return _networkAllowed;
   }
 
   void _networkChanged() {
-    if (!_closed &&
-        phase == UpdatePhase.downloading &&
-        !_storage!.allows(DownloadPurpose.manual)) {
+    if (!_closed && phase == UpdatePhase.downloading && !_networkAllowed) {
       cancel();
     }
   }

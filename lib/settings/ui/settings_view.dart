@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../../downloads/models/download_task.dart';
 import '../connection_controller.dart';
-import '../media_storage_controller.dart';
-import 'connection_card.dart';
 import '../../updates/ui/update_card.dart';
-import '../../playback/models/playback_state.dart';
+import '../../updates/update_platform.dart';
+import 'connection_card.dart';
+import 'download_settings.dart';
+import 'playback_settings.dart';
 
-class SettingsView extends StatelessWidget {
+enum _Section { server, downloads, playback, about }
+
+class SettingsView extends StatefulWidget {
   const SettingsView({
     super.key,
     required this.controller,
@@ -21,224 +23,141 @@ class SettingsView extends StatelessWidget {
   final TextEditingController keyController;
   final VoidCallback onConnect;
   final VoidCallback onDownloads;
-
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(24),
-    children: [
-      Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 640),
-          child: ConnectionCard(
-            controller: controller,
-            serverController: serverController,
-            keyController: keyController,
-            onConnect: onConnect,
-          ),
-        ),
-      ),
-      const SizedBox(height: 24),
-      ListTile(
-        leading: const Icon(Icons.storage_outlined),
-        title: const Text('下载与存储'),
-        subtitle: Text(
-          '${controller.downloads?.tasks.where((task) => task.status == DownloadStatus.completed).length ?? 0} 首已下载',
-        ),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onDownloads,
-      ),
-      if (controller.mediaStorage case final storage?) ...[
-        ListTile(
-          leading: const Icon(Icons.folder_outlined),
-          title: const Text('媒体目录'),
-          subtitle: Text(storage.directoryLabel),
-          trailing: const Icon(Icons.folder_open),
-          onTap: controller.busy || storage.busy
-              ? null
-              : () => _chooseDirectory(context, storage),
-        ),
-        if (storage.busy) ...[
-          const LinearProgressIndicator(),
-          Text('已处理 ${storage.migrated} 首曲目'),
-        ],
-        if (storage.error != null)
-          Text(
-            storage.error!,
-            style: TextStyle(color: Theme.of(context).colorScheme.error),
-          ),
-        if (storage.migrationPending && !storage.busy)
-          TextButton(
-            onPressed: controller.busy
-                ? null
-                : () => _changeDirectory(context, storage.directory, true),
-            child: const Text('继续未完成的迁移'),
-          ),
-        ListTile(
-          title: const Text('移动网络下载'),
-          subtitle: const Text('已下载曲目可离线播放'),
-          trailing: DropdownButton<MobileDownloadPolicy>(
-            value: storage.mobilePolicy,
-            items: const [
-              DropdownMenuItem(
-                value: MobileDownloadPolicy.allow,
-                child: Text('允许下载'),
-              ),
-              DropdownMenuItem(
-                value: MobileDownloadPolicy.playbackOnly,
-                child: Text('仅播放前下载'),
-              ),
-              DropdownMenuItem(
-                value: MobileDownloadPolicy.prohibit,
-                child: Text('禁止下载'),
-              ),
-            ],
-            onChanged: (value) {
-              if (value != null) storage.setMobilePolicy(value);
-            },
-          ),
-        ),
-        ListTile(
-          title: const Text('播放缓存上限'),
-          subtitle: Text(
-            '已使用 ${(storage.cacheBytes / (1024 * 1024)).toStringAsFixed(0)} MB，手动下载会永久保留',
-          ),
-          trailing: DropdownButton<int>(
-            value: storage.cacheLimit,
-            items: [
-              for (final mb in {
-                256,
-                1024,
-                4096,
-                storage.cacheLimit ~/ (1024 * 1024),
-              })
-                DropdownMenuItem(
-                  value: mb * 1024 * 1024,
-                  child: Text(mb < 1024 ? '$mb MB' : '${mb ~/ 1024} GB'),
-                ),
-            ],
-            onChanged: (value) {
-              if (value != null) controller.setPlaybackCacheLimit(value);
-            },
-          ),
-        ),
-      ],
-      ListTile(
-        leading: const Icon(Icons.headphones_outlined),
-        title: const Text('播放行为'),
-        subtitle: Text(
-          Theme.of(context).platform == TargetPlatform.windows
-              ? '最小化继续播放，关闭窗口退出'
-              : '支持后台与锁屏播放，断开耳机时暂停',
-        ),
-      ),
-      if (controller.playback case final player?)
-        ListenableBuilder(
-          listenable: player,
-          builder: (context, _) => Column(
-            children: [
-              SwitchListTile(
-                title: const Text('启动时恢复播放队列'),
-                subtitle: const Text('恢复当前曲目和进度，保持暂停'),
-                value: controller.restorePlaybackEnabled,
-                onChanged: controller.mediaStorage == null
-                    ? null
-                    : controller.setRestorePlayback,
-              ),
-              ListTile(
-                title: const Text('播放模式'),
-                trailing: DropdownButton<PlaybackMode>(
-                  value: player.mode,
-                  items: [
-                    for (final mode in PlaybackMode.values)
-                      DropdownMenuItem(
-                        value: mode,
-                        child: Text(switch (mode) {
-                          PlaybackMode.sequence => '顺序播放',
-                          PlaybackMode.repeatAll => '列表循环',
-                          PlaybackMode.repeatOne => '单曲循环',
-                          PlaybackMode.shuffle => '随机播放',
-                        }),
-                      ),
-                  ],
-                  onChanged: (mode) {
-                    if (mode != null) player.setMode(mode);
-                  },
-                ),
-              ),
-              ListTile(
-                title: Text('应用音量 ${player.volume.round()}%'),
-                subtitle: Slider(
-                  value: player.volume,
-                  max: 100,
-                  label: '${player.volume.round()}%',
-                  onChanged: player.setVolume,
-                ),
-              ),
-            ],
-          ),
-        ),
-      if (controller.updates case final updates?)
-        UpdateCard(controller: updates),
-      const ListTile(
-        leading: Icon(Icons.info_outline),
-        title: Text('Pikmelo Player'),
-        subtitle: Text('Windows · Android\n本地音频与授权曲库同步'),
-      ),
-    ],
-  );
+  State<SettingsView> createState() => _SettingsViewState();
+}
 
-  Future<void> _chooseDirectory(
-    BuildContext context,
-    MediaStorageController storage,
-  ) async {
-    try {
-      final selected = await storage.store.files.chooseDirectory();
-      if (selected == null || !context.mounted) return;
-      final migrate = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('变更媒体目录'),
-          content: const Text('迁移会逐首复制并校验音频，完成后清理原文件。也可以保留现有文件，仅将新下载保存到所选目录。'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('仅新下载'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('迁移已有音乐'),
+class _SettingsViewState extends State<SettingsView> {
+  _Section? _section;
+  static const _labels = {
+    _Section.server: '服务器配置',
+    _Section.downloads: '下载行为',
+    _Section.playback: '播放行为',
+    _Section.about: '关于',
+  };
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: Listenable.merge([
+      widget.controller,
+      widget.controller.playback,
+      widget.controller.updates,
+    ]),
+    builder: (context, _) {
+      final controller = widget.controller;
+      final storage = controller.mediaStorage;
+      final player = controller.playback;
+      final updates = controller.updates;
+      final content = switch (_section) {
+        _Section.server => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ConnectionCard(
+              controller: controller,
+              serverController: widget.serverController,
+              keyController: widget.keyController,
+              onConnect: widget.onConnect,
             ),
           ],
         ),
+        _Section.downloads => DownloadSettings(
+          controller: controller,
+          onDownloads: widget.onDownloads,
+        ),
+        _Section.playback => PlaybackSettings(controller: controller),
+        _Section.about => ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            ListTile(
+              title: const Text('Pikmelo Player'),
+              subtitle: Text('Windows · Android'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.code),
+              title: const Text('项目仓库'),
+              subtitle: const Text('ShenYunyao1 / Pikmelo-Player'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () async {
+                try {
+                  await UpdatePlatform().openRepository();
+                } catch (_) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('无法打开项目仓库，请检查浏览器配置。')),
+                    );
+                  }
+                }
+              },
+            ),
+            if (updates != null) UpdateCard(controller: updates),
+          ],
+        ),
+        null => ListView(
+          children: [
+            for (final section in _Section.values)
+              ListTile(
+                leading: Icon(switch (section) {
+                  _Section.server => Icons.cloud_outlined,
+                  _Section.downloads => Icons.download_outlined,
+                  _Section.playback => Icons.headphones_outlined,
+                  _Section.about => Icons.info_outline,
+                }),
+                title: Text(_labels[section]!),
+                subtitle: Text(switch (section) {
+                  _Section.server =>
+                    '${controller.serverUri.host} · ${controller.connected ? '已连接' : '未连接'}',
+                  _Section.downloads =>
+                    storage == null
+                        ? '媒体目录、移动网络与缓存'
+                        : '${mobileDownloadLabel(storage.mobilePolicy)} · ${storage.cacheLimit ~/ (1024 * 1024)} MB',
+                  _Section.playback =>
+                    player == null
+                        ? '队列恢复与默认播放模式'
+                        : '${controller.restorePlaybackEnabled ? '恢复队列' : '不恢复队列'} · ${playbackModeLabel(player.defaultMode)}',
+                  _Section.about =>
+                    updates?.release != null
+                        ? '发现新版本 ${updates!.release!.version}'
+                        : '当前版本 ${updates?.currentVersion ?? '信息暂不可用'}',
+                }),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => setState(() => _section = section),
+              ),
+          ],
+        ),
+      };
+      return PopScope(
+        canPop: _section == null,
+        onPopInvokedWithResult: (didPop, _) {
+          if (!didPop && _section != null) setState(() => _section = null);
+        },
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 640),
+            child: Column(
+              children: [
+                if (_section != null)
+                  Row(
+                    children: [
+                      IconButton(
+                        tooltip: '返回设置',
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () => setState(() => _section = null),
+                      ),
+                      Expanded(
+                        child: Text(
+                          _labels[_section]!,
+                          style: Theme.of(context).textTheme.titleLarge,
+                        ),
+                      ),
+                    ],
+                  ),
+                Expanded(
+                  child: KeyedSubtree(key: ValueKey(_section), child: content),
+                ),
+              ],
+            ),
+          ),
+        ),
       );
-      if (migrate != null && context.mounted) {
-        await _changeDirectory(context, selected, migrate);
-      }
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('无法打开媒体目录，请检查目录权限。')));
-      }
-    }
-  }
-
-  Future<void> _changeDirectory(
-    BuildContext context,
-    String? directory,
-    bool migrate,
-  ) async {
-    try {
-      await controller.changeMediaDirectory(directory, migrate: migrate);
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('目录变更未完成，请检查权限和空间后重试。')));
-      }
-    }
-  }
+    },
+  );
 }

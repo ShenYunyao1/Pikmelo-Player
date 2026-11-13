@@ -115,11 +115,28 @@ class UpdatePlugin : FlutterPlugin, ActivityAware {
                     "updateInfo" -> information()
                     "verifyUpdate" -> { verify(call); null }
                     "installUpdate" -> install(call)
-                    "openRelease" -> {
-                        val url = call.argument<String>("url")!!
-                        require(url.startsWith("https://github.com/ShenYunyao1/Pikmelo-Player/releases"))
-                        main.post { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-                        null
+                    "openRelease", "openRepository" -> {
+                        val url = if (call.method == "openRepository") {
+                            "https://github.com/ShenYunyao1/Pikmelo-Player"
+                        } else {
+                            call.argument<String>("url")!!
+                        }
+                        require(
+                            call.method == "openRepository" ||
+                                url.startsWith("https://github.com/ShenYunyao1/Pikmelo-Player/releases")
+                        )
+                        main.post {
+                            try {
+                                context.startActivity(
+                                    Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                                result.success(null)
+                            } catch (error: Exception) {
+                                result.error("update", error.message ?: "无法打开浏览器", null)
+                            }
+                        }
+                        return@execute
                     }
                     else -> throw IllegalArgumentException("Unknown update operation")
                 }

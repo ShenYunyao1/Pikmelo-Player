@@ -36,6 +36,7 @@ class UpdatePlatform {
     UpdateArtifact artifact,
   ) =>
       channel.invokeMethod('installUpdate', arguments(path, release, artifact));
+  Future<void> openRepository() => channel.invokeMethod('openRepository');
   Future<void> openRelease(Uri url) =>
       channel.invokeMethod('openRelease', {'url': url.toString()});
 }

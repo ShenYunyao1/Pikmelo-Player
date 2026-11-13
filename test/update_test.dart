@@ -4,7 +4,8 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
+import 'package:pikmelo_player/updates/ui/update_card.dart';
 import 'package:pikmelo_player/infrastructure/storage/local_library_store.dart';
 import 'package:pikmelo_player/settings/media_storage_controller.dart';
 import 'package:pikmelo_player/updates/github_update_service.dart';
@@ -224,6 +225,102 @@ void main() {
       store.close();
       await root.delete(recursive: true);
     });
+    test('update cellular allowance is independent from song prohibition and persists', () async {
+      mobile = true;
+      storage.setMobilePolicy(MobileDownloadPolicy.prohibit);
+      await controller.initialize(storage);
+      expect(controller.mobilePolicy, MobileUpdatePolicy.wifiOnly);
+      controller.setMobilePolicy(MobileUpdatePolicy.allow);
+      await controller.downloadAndInstall();
+      expect(service.downloads, 1);
+      expect(platform.operations, ['verify', 'install']);
+      expect(storage.mobilePolicy, MobileDownloadPolicy.prohibit);
+      expect(store.setting('mobile_update_policy'), 'allow');
+    });
+    test('saved Wi-Fi update policy remains independent from allowed song downloads', () async {
+      mobile = true;
+      storage.setMobilePolicy(MobileDownloadPolicy.allow);
+      store.saveSetting('mobile_update_policy', 'wifiOnly');
+      await controller.initialize(storage);
+      await controller.downloadAndInstall();
+      expect(controller.release, isNotNull);
+      expect(service.downloads, 0);
+      expect(controller.mobilePolicy, MobileUpdatePolicy.wifiOnly);
+    });
+    test('legacy explicit cellular permission initializes a separate update preference', () async {
+      storage.setMobilePolicy(MobileDownloadPolicy.allow);
+      await controller.initialize(storage);
+      expect(controller.mobilePolicy, MobileUpdatePolicy.allow);
+      storage.setMobilePolicy(MobileDownloadPolicy.prohibit);
+      expect(controller.mobilePolicy, MobileUpdatePolicy.allow);
+      expect(store.setting('mobile_update_policy'), 'allow');
+    });
+    for (final policyChange in [true, false]) {
+      test(
+        'active update cancellation follows ${policyChange ? 'update policy' : 'network'} changes',
+        () async {
+          mobile = policyChange;
+          await controller.initialize(storage);
+          if (policyChange) {
+            controller.setMobilePolicy(MobileUpdatePolicy.allow);
+          }
+          service.downloadGate = Completer<void>();
+          final downloading = controller.downloadAndInstall();
+          for (var i = 0; i < 100 && service.downloads == 0; i++) {
+            await Future<void>.delayed(const Duration(milliseconds: 1));
+          }
+          expect(controller.phase, UpdatePhase.downloading);
+          if (policyChange) {
+            controller.setMobilePolicy(MobileUpdatePolicy.wifiOnly);
+          } else {
+            mobile = true;
+            await storage.refreshNetwork();
+          }
+          service.downloadGate!.complete();
+          await downloading;
+          expect(controller.phase, UpdatePhase.available);
+          expect(platform.operations, isEmpty);
+        },
+      );
+    }
+
+    testWidgets(
+      'update policy choice fits narrow large text and retains update controls',
+      (tester) async {
+        tester.view.physicalSize = const Size(320, 640);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        await tester.runAsync(() => controller.initialize(storage));
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context)
+                  .copyWith(textScaler: const TextScaler.linear(1.6)),
+              child: child!,
+            ),
+            home: Scaffold(
+              body: SingleChildScrollView(
+                child: UpdateCard(controller: controller),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(find.text('移动网络更新策略'));
+        await tester.tap(find.text('移动网络更新策略'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('允许移动网络').last);
+        await tester.pumpAndSettle();
+        expect(controller.mobilePolicy, MobileUpdatePolicy.allow);
+        expect(storage.mobilePolicy, MobileDownloadPolicy.playbackOnly);
+        await tester.ensureVisible(find.text('检查更新'));
+        expect(find.text('下载并安装'), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+
     test('version check offers only a strictly newer release', () async {
       platform.code = 101;
       await controller.initialize(storage);
@@ -328,6 +425,7 @@ void main() {
 
 class _Service extends GitHubUpdateService {
   int downloads = 0;
+  Completer<void>? downloadGate;
   final release = UpdateRelease.fromJson(
     _manifest([1, 2]),
     page: GitHubUpdateService.releasesPage,
@@ -345,6 +443,7 @@ class _Service extends GitHubUpdateService {
     required void Function(int received) onProgress,
   }) async {
     downloads++;
+    await downloadGate?.future;
     return File('${directory.path}/${artifact.name}').writeAsBytes([1, 2]);
   }
 }

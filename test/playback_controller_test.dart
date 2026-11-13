@@ -39,6 +39,23 @@ void main() {
   });
 
   test(
+    'new queues apply the default while current queues retain their mode',
+    () async {
+      controller.setDefaultMode(PlaybackMode.repeatAll);
+      await controller.playQueue(items);
+      expect(controller.mode, PlaybackMode.repeatAll);
+      controller.setMode(PlaybackMode.shuffle);
+      controller.setDefaultMode(PlaybackMode.repeatOne);
+      expect(controller.mode, PlaybackMode.shuffle);
+      await controller.playQueue(items);
+      expect(controller.mode, PlaybackMode.repeatOne);
+      await controller.clear();
+      controller.append(items.first);
+      expect(controller.mode, PlaybackMode.repeatOne);
+    },
+  );
+
+  test(
     'queue edits preserve the playing source and support duplicate appends',
     () async {
       await controller.playQueue(items, index: 1);

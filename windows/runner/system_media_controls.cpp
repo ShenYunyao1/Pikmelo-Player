@@ -72,9 +72,11 @@ SystemMediaControls::SystemMediaControls(flutter::BinaryMessenger* messenger,
         info[flutter::EncodableValue("abis")] = flutter::EncodableValue(flutter::EncodableList{flutter::EncodableValue("x86_64")});
         result->Success(flutter::EncodableValue(info));
         return;
-      } else if (call.method_name() == "openRelease") {
-        const auto url = Value<std::string>(std::get<flutter::EncodableMap>(*call.arguments()), "url");
-        if (url.rfind("https://github.com/ShenYunyao1/Pikmelo-Player/releases", 0) != 0) {
+      } else if (call.method_name() == "openRelease" || call.method_name() == "openRepository") {
+        const auto url = call.method_name() == "openRepository"
+            ? std::string("https://github.com/ShenYunyao1/Pikmelo-Player")
+            : Value<std::string>(std::get<flutter::EncodableMap>(*call.arguments()), "url");
+        if (call.method_name() != "openRepository" && url.rfind("https://github.com/ShenYunyao1/Pikmelo-Player/releases", 0) != 0) {
           result->Error("update", "Untrusted release URL");
           return;
         }

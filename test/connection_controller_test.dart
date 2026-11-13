@@ -546,6 +546,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('设置').last);
       await tester.pumpAndSettle();
+      await tester.tap(find.text('服务器配置'));
+      await tester.pumpAndSettle();
       await tester.enterText(find.byType(TextField).first, 'invalid-server');
       await tester.enterText(find.byType(TextField).last, 'test-key');
       await Scrollable.ensureVisible(tester.element(find.byType(FilledButton)));
@@ -608,6 +610,8 @@ void main() {
       await tester.pumpWidget(PikmeloPlayerApp(dependencies: dependencies));
       await tester.pump();
       await tester.tap(find.text('设置').last);
+      await tester.pump();
+      await tester.tap(find.text('服务器配置'));
       await tester.pump();
       await tester.enterText(find.byType(TextField).first, 'https://other.com');
       delayedKeys.reading.complete('old-server-key');
@@ -811,6 +815,8 @@ void main() {
       await tester.pumpWidget(PikmeloPlayerApp(dependencies: dependencies));
       await tester.pumpAndSettle();
       await tester.tap(find.text('设置').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('服务器配置'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.byType(TextField).first,

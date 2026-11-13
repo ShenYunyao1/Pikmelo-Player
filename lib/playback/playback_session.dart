@@ -43,6 +43,10 @@ class PlaybackSession {
       final mode = PlaybackMode.values.byName(
         preferences['mode'] as String? ?? 'sequence',
       );
+      final defaultMode = PlaybackMode.values.firstWhere(
+        (value) => value.name == preferences['default_mode'],
+        orElse: () => mode,
+      );
       final volume = (preferences['volume'] as num? ?? 100).toDouble();
       if (!volume.isFinite) return;
       final raw = enabled && restoreQueue ? store.setting(_key) : null;
@@ -79,7 +83,13 @@ class PlaybackSession {
         index: restoredIndex < 0 ? 0 : restoredIndex,
         position: Duration(milliseconds: position),
         duration: Duration(milliseconds: restoredIndex < 0 ? 0 : duration),
-        mode: mode,
+        mode: items.isEmpty
+            ? defaultMode
+            : PlaybackMode.values.firstWhere(
+                (value) => value.name == data['mode'],
+                orElse: () => mode,
+              ),
+        defaultMode: defaultMode,
         volume: volume,
       );
     } catch (_) {
@@ -91,6 +101,7 @@ class PlaybackSession {
     try {
       final preferences = jsonEncode({
         'mode': player.mode.name,
+        'default_mode': player.defaultMode.name,
         'volume': player.volume,
       });
       final ids = player.queue
@@ -116,6 +127,7 @@ class PlaybackSession {
           _key,
           jsonEncode({
             'schema': 1,
+            'mode': player.mode.name,
             'ids': ids,
             'index': player.currentIndex,
             'position': position,

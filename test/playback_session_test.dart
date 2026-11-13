@@ -53,6 +53,42 @@ void main() {
     await directory.delete(recursive: true);
   });
 
+  test(
+    'legacy mode initializes default and snapshots retain their own mode',
+    () async {
+      store.saveSetting(
+        'playback_preferences',
+        '{"mode":"repeatAll","volume":50}',
+      );
+      final first = player();
+      final session = PlaybackSession(
+        store: store,
+        player: first,
+        scope: 'key',
+        serverUri: uri,
+      );
+      expect(first.defaultMode, PlaybackMode.repeatAll);
+      first.append(items().first);
+      first.setMode(PlaybackMode.shuffle);
+      first.setDefaultMode(PlaybackMode.repeatOne);
+      expect(first.mode, PlaybackMode.shuffle);
+      session.dispose();
+      await first.shutdown();
+      final next = player();
+      final restored = PlaybackSession(
+        store: store,
+        player: next,
+        scope: 'key',
+        serverUri: uri,
+      );
+      expect(next.mode, PlaybackMode.shuffle);
+      expect(next.defaultMode, PlaybackMode.repeatOne);
+      expect(next.queue, hasLength(1));
+      restored.dispose();
+      await next.shutdown();
+    },
+  );
+
   test('malformed preferences do not block startup', () async {
     store.saveSetting('playback_preferences', '{broken');
     final current = player();
@@ -79,7 +115,7 @@ void main() {
         serverUri: uri,
         restoreQueue: false,
       );
-      first.setMode(PlaybackMode.repeatOne);
+      first.setDefaultMode(PlaybackMode.repeatOne);
       await first.setVolume(25);
       preferences.dispose();
       await first.shutdown();

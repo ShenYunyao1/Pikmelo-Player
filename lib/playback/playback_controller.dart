@@ -40,6 +40,7 @@ class PlaybackController extends ChangeNotifier {
   StreamSubscription<PlaybackState>? _subscription;
   PlaybackState _state = const PlaybackState();
   PlaybackMode _mode = PlaybackMode.sequence;
+  PlaybackMode _defaultMode = PlaybackMode.sequence;
   int _index = -1;
   int _version = 0;
   double _volume = 100;
@@ -60,6 +61,7 @@ class PlaybackController extends ChangeNotifier {
       _index >= 0 && _index < _queue.length ? _queue[_index] : null;
   PlaybackState get state => _state;
   PlaybackMode get mode => _mode;
+  PlaybackMode get defaultMode => _defaultMode;
   double get volume => _volume;
   bool get loading => _loading;
   bool get stopped => _stopped;
@@ -103,12 +105,14 @@ class PlaybackController extends ChangeNotifier {
     Duration position = Duration.zero,
     Duration duration = Duration.zero,
     PlaybackMode mode = PlaybackMode.sequence,
+    PlaybackMode? defaultMode,
     double volume = 100,
   }) {
     if (_disposed || _engine != null || _loading || _queue.isNotEmpty) return;
     _queue = List.unmodifiable(items);
     _index = items.isEmpty ? -1 : index.clamp(0, items.length - 1);
     _mode = mode;
+    _defaultMode = defaultMode ?? mode;
     _volume = volume.clamp(0, 100);
     _stopped = true;
     _playRequested = false;
@@ -130,6 +134,7 @@ class PlaybackController extends ChangeNotifier {
       ),
     ]);
     if (_index < 0) {
+      _mode = _defaultMode;
       _index = _queue.length - 1;
       _state = const PlaybackState();
     }
@@ -182,6 +187,7 @@ class PlaybackController extends ChangeNotifier {
   Future<void> playQueue(List<PlaybackItem> items, {int index = 0}) {
     if (_disposed) return Future.value();
     _queue = List.unmodifiable(items);
+    _mode = _defaultMode;
     _history.clear();
     _shuffleBag.clear();
     return jump(index);
@@ -366,6 +372,12 @@ class PlaybackController extends ChangeNotifier {
     return _schedule(_version, () async {
       await _engine?.setVolume(_effectiveVolume);
     });
+  }
+
+  void setDefaultMode(PlaybackMode mode) {
+    if (_disposed || _defaultMode == mode) return;
+    _defaultMode = mode;
+    _notify();
   }
 
   void setMode(PlaybackMode mode) {

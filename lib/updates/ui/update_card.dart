@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../update_controller.dart';
+import '../../settings/ui/setting_choice.dart';
 
 class UpdateCard extends StatelessWidget {
   const UpdateCard({super.key, required this.controller});
@@ -22,10 +23,37 @@ class UpdateCard extends StatelessWidget {
               Text('当前版本 ${controller.currentVersion}'),
               if (update != null) Text('可用版本 ${update.version}'),
               if (controller.android)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('移动网络更新策略'),
+                  subtitle: Text(
+                    controller.mobilePolicy == MobileUpdatePolicy.allow
+                        ? '允许移动网络'
+                        : '仅 Wi-Fi',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: !controller.initialized
+                      ? null
+                      : () async {
+                          final value = await chooseSetting(
+                            context,
+                            '移动网络更新策略',
+                            controller.mobilePolicy,
+                            {
+                              MobileUpdatePolicy.wifiOnly: '仅 Wi-Fi',
+                              MobileUpdatePolicy.allow: '允许移动网络',
+                            },
+                          );
+                          if (value != null && context.mounted) {
+                            controller.setMobilePolicy(value);
+                          }
+                        },
+                ),
+              if (controller.android)
                 SwitchListTile.adaptive(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('自动更新'),
-                  subtitle: const Text('启动时检查，遵循移动网络下载策略'),
+                  subtitle: const Text('启动时检查并按更新网络策略下载和安装'),
                   value: controller.automatic,
                   onChanged: controller.setAutomatic,
                 ),
