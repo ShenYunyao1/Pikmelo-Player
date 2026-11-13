@@ -20,7 +20,12 @@ class _PlaybackProgressState extends State<PlaybackProgress> {
   double? _drag;
   PlaybackItem? _item;
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: widget.controller,
+    builder: (context, _) => RepaintBoundary(child: _buildProgress(context)),
+  );
+
+  Widget _buildProgress(BuildContext context) {
     final player = widget.controller;
     if (!identical(_item, player.current)) {
       _drag = null;

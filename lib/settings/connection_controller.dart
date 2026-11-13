@@ -44,7 +44,7 @@ class ConnectionController extends ChangeNotifier {
     playback?.resolveSource = _prepareSource;
     playback?.loadLyrics = _loadLyrics;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
-    playback?.addListener(_playbackChanged);
+    playback?.presentationChanges.addListener(_playbackChanged);
     playback?.loadMetadata = (item) => item.serverUri == serverUri
         ? metadataFor(item.track.id)
         : Future.value();
@@ -727,8 +727,8 @@ class ConnectionController extends ChangeNotifier {
       _networkRevision = revision;
       playback?.invalidateLyrics();
       _prefetchKey = null;
-      _playbackChanged();
     }
+    _playbackChanged();
   }
 
   void setPlaybackCacheLimit(int bytes) {
@@ -865,7 +865,7 @@ class ConnectionController extends ChangeNotifier {
     if (_disposed) return;
     _disposed = true;
     _playbackSession?.dispose();
-    playback?.removeListener(_playbackChanged);
+    playback?.presentationChanges.removeListener(_playbackChanged);
     _activeClient?.close();
     _lyricsClient?.close();
     unawaited(playback?.clear() ?? Future.value());

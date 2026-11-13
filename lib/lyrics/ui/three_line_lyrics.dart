@@ -198,7 +198,7 @@ class _ThreeLineLyricsState extends State<ThreeLineLyrics>
                                 overflow: TextOverflow.ellipsis,
                                 textAlign: TextAlign.center,
                                 style: TextStyle(
-                                  fontSize: font,
+                                  fontSize: font * .9,
                                   height: 1.1,
                                   color: theme.colorScheme.onSurfaceVariant,
                                 ),
@@ -243,16 +243,11 @@ class _LyricFlow extends FlowDelegate {
       final opacity = distance <= 1
           ? 1 - distance * (relative < 0 ? .7 : .5)
           : (relative < 0 ? .3 : .5) * (1 - (distance - 1) / .8);
-      final scale = 1 - math.min(1.0, distance) * .1;
-      final transform = Matrix4.diagonal3Values(scale, scale, 1)
-        ..setEntry(0, 3, context.size.width * (1 - scale) / 2)
-        ..setEntry(
-          1,
-          3,
-          context.size.height / 2 -
-              rowHeight * scale / 2 +
-              relative * rowHeight,
-        );
+      final transform = Matrix4.translationValues(
+        0,
+        context.size.height / 2 - rowHeight / 2 + relative * rowHeight,
+        0,
+      );
       context.paintChild(
         child,
         transform: transform,

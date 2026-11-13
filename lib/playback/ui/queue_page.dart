@@ -36,7 +36,7 @@ class QueueContents extends StatelessWidget {
   final VoidCallback? onClose;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: controller,
+    listenable: controller.presentationChanges,
     builder: (context, _) => Column(
       children: [
         Padding(

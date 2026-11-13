@@ -385,7 +385,7 @@ void main() {
       'lyric transition frames reuse text and leave siblings unpainted',
       (tester) async {
         player.loadLyrics = (_) async =>
-            parseLyrics('[00:00]first\n[00:01]second\n[00:02]third', source);
+            parseLyrics('[00:00]first\n[00:00.100]second\n[00:02]third', source);
         await tester.runAsync(() => player.playQueue(items));
         final painter = _PaintCounter();
         await tester.pumpWidget(
@@ -399,7 +399,7 @@ void main() {
           ),
         );
         await tester.pump();
-        engines.last.emit(1100, playing: false);
+        engines.last.emit(150, playing: false);
         await tester.pump();
         var builds = 0;
         final previous = debugOnRebuildDirtyWidget;
@@ -414,6 +414,22 @@ void main() {
         debugOnRebuildDirtyWidget = previous;
         expect(builds, 0);
         expect(painter.paints, 0);
+        final flowFinder = find
+            .descendant(
+              of: find.byType(ThreeLineLyrics),
+              matching: find.byType(Flow),
+            )
+            .first;
+        final flow = tester.widget<Flow>(flowFinder);
+        final row = tester.renderObject<RenderBox>(
+          find.byWidget(flow.children.first),
+        );
+        expect(
+          row
+              .getTransformTo(tester.renderObject(flowFinder))
+              .storage[0],
+          closeTo(1, .001),
+        );
         await tester.pumpWidget(const SizedBox());
       },
     );

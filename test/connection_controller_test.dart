@@ -1,3 +1,4 @@
+import 'package:pikmelo_player/settings/media_storage_controller.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:pikmelo_player/lyrics/models/lyric_document.dart';
 
@@ -184,6 +185,59 @@ void main() {
       await player.shutdown();
     },
   );
+
+  test('queue progress does not reevaluate upcoming authorization', () async {
+    controller.dispose();
+    final engine = _ProgressEngine();
+    var checks = 0;
+    final player = PlaybackController(
+      createEngine: () => engine,
+      isAvailable: (_) {
+        checks++;
+        return true;
+      },
+    );
+    controller = ConnectionController(
+      networkReader: () async => {'connected': true, 'cellular': false},
+      keyStore: keys,
+      openStore: () async => store,
+      createClient: (_, _) => client,
+      playback: player,
+    );
+    client.health.complete({'version': 'test'});
+    await controller.connectAndSync('https://example.com', 'test-key');
+    player.resolveSource = (_) async => '/one.media';
+    await player.playQueue([
+      PlaybackItem(
+        serverUri: controller.serverUri,
+        path: '/one.media',
+        track: Track.fromJson(store.tracks(controller.serverUri).first),
+      ),
+      PlaybackItem(
+        serverUri: controller.serverUri,
+        path: '/two.media',
+        track: Track.fromJson({'id': 'two', 'title': 'two', 'size': 1}),
+      ),
+    ]);
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    checks = 0;
+    var notifications = 0;
+    controller.addListener(() => notifications++);
+    for (var i = 1; i <= 5; i++) {
+      await player.seek(Duration(seconds: i));
+      await Future<void>.delayed(const Duration(milliseconds: 1));
+    }
+    expect(checks, 0);
+    expect(notifications, 0);
+    controller.mediaStorage!.setMobilePolicy(MobileDownloadPolicy.allow);
+    expect(checks, greaterThan(0));
+    controller.setPlaybackCacheLimit(256 * 1024 * 1024);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    expect(notifications, greaterThan(0));
+    controller.dispose();
+    await controller.downloadShutdown;
+    await player.shutdown();
+  });
 
   test(
     'single-track progress does not repeatedly scan and notify cache storage',

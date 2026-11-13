@@ -66,6 +66,11 @@ class PlaybackController extends ChangeNotifier {
   bool _completionHandled = false;
   bool _disposed = false;
   bool _notifierDisposed = false;
+  final _presentationChanges = ChangeNotifier();
+  /// Metadata and controls changes. Position updates use the controller itself.
+  Listenable get presentationChanges => _presentationChanges;
+  Object? _lastPresentation;
+
   Future<void> _commands = Future.value();
   Future<void>? _shutdown;
 
@@ -584,7 +589,31 @@ class PlaybackController extends ChangeNotifier {
 
   bool _current(int version) => !_disposed && version == _version;
   void _notify() {
-    if (!_disposed) notifyListeners();
+    if (_disposed) return;
+    notifyListeners();
+    if (_disposed) return;
+    final presentation = (
+      _queue,
+      _index,
+      _mode,
+      _defaultMode,
+      _volume,
+      _loading,
+      _stopped,
+      _playRequested,
+      _state.playing,
+      _state.buffering,
+      _state.completed,
+      _state.error,
+      _systemError,
+      loadArtwork,
+      artworkRevision?.call(),
+      loadMetadata,
+    );
+    if (_lastPresentation != presentation) {
+      _lastPresentation = presentation;
+      _presentationChanges.notifyListeners();
+    }
   }
 
   Future<void> shutdown() {
@@ -604,6 +633,7 @@ class PlaybackController extends ChangeNotifier {
     unawaited(shutdown());
     if (!_notifierDisposed) {
       _notifierDisposed = true;
+      _presentationChanges.dispose();
       super.dispose();
     }
   }

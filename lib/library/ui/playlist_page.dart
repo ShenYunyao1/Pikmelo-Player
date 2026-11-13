@@ -158,7 +158,7 @@ class PlaylistPage extends StatelessWidget {
                 };
                 final player = controller.playback;
                 return ListenableBuilder(
-                  listenable: player ?? controller,
+                  listenable: player?.presentationChanges ?? controller,
                   builder: (context, _) {
                     final active =
                         player?.current?.track.id == entry.id &&

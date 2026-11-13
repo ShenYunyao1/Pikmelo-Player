@@ -11,7 +11,7 @@ class PlayerBar extends StatelessWidget {
   final PlaybackController controller;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: controller,
+    listenable: controller.presentationChanges,
     builder: (context, _) {
       final item = controller.current;
       final error = controller.state.error ?? controller.systemError;

@@ -69,6 +69,47 @@ void main() {
     await noisy.close();
   });
 
+  testWidgets(
+    'position updates keep marquee text built while progress advances',
+    (tester) async {
+      final song = PlaybackItem(
+        serverUri: item.serverUri,
+        path: item.path,
+        track: Track.fromJson({
+          'id': 'one',
+          'title': 'Long title ' * 20,
+          'artist': 'Long artist ' * 20,
+          'album': 'Long album ' * 20,
+        }),
+      );
+      await tester.runAsync(() => controller.playQueue([song]));
+      await tester.pumpWidget(
+        MaterialApp(home: NowPlayingPage(controller: controller)),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      var builds = 0;
+      final prior = debugOnRebuildDirtyWidget;
+      debugOnRebuildDirtyWidget = (element, builtOnce) {
+        prior?.call(element, builtOnce);
+        if (element.widget is ScrollingTrackText) builds++;
+      };
+      try {
+        for (var second = 1; second <= 8; second++) {
+          engines.single._emit(
+            engines.single._state.copyWith(position: Duration(seconds: second)),
+          );
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+      } finally {
+        debugOnRebuildDirtyWidget = prior;
+      }
+      expect(find.text('0:08'), findsOneWidget);
+      expect(builds, 0);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   for (final surface in ['page', 'bar', 'queue']) {
     testWidgets('$surface progress refreshes reuse the artwork request', (
       tester,

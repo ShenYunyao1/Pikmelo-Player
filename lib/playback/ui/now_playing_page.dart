@@ -15,7 +15,7 @@ class NowPlayingPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: controller,
+    listenable: controller.presentationChanges,
     child: ThreeLineLyrics(player: controller),
     builder: (context, lyrics) {
       final item = controller.current;
