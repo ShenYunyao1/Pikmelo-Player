@@ -1,20 +1,24 @@
 import 'package:flutter/material.dart';
 
+import '../../library/ui/track_details.dart';
 import '../../shared/widgets/music_artwork.dart';
 import '../playback_controller.dart';
 import 'playback_controls.dart';
 import 'queue_page.dart';
-import '../../library/ui/track_details.dart';
+import 'scrolling_track_text.dart';
+import 'volume_button.dart';
 
 class NowPlayingPage extends StatelessWidget {
   const NowPlayingPage({super.key, required this.controller});
   final PlaybackController controller;
+
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
       final item = controller.current;
       final error = controller.state.error ?? controller.systemError;
+      final theme = Theme.of(context);
       return Scaffold(
         appBar: AppBar(
           leading: IconButton(
@@ -38,39 +42,10 @@ class NowPlayingPage extends StatelessWidget {
                         : () => controller.loadMetadata!(item),
                   );
                 }
-                if (value == 'volume') {
-                  showModalBottomSheet<void>(
-                    context: context,
-                    builder: (_) => ListenableBuilder(
-                      listenable: controller,
-                      builder: (context, _) => SafeArea(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Row(
-                            children: [
-                              const Text('音量'),
-                              Expanded(
-                                child: Slider(
-                                  label: '音量',
-                                  value: controller.volume,
-                                  max: 100,
-                                  onChanged: controller.setVolume,
-                                  semanticFormatterCallback: (value) =>
-                                      '音量 ${value.round()}%',
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                }
               },
               itemBuilder: (_) => [
                 if (item != null)
                   const PopupMenuItem(value: 'details', child: Text('曲目信息')),
-                const PopupMenuItem(value: 'volume', child: Text('音量')),
                 const PopupMenuItem(value: 'stop', child: Text('停止播放')),
               ],
             ),
@@ -81,119 +56,134 @@ class NowPlayingPage extends StatelessWidget {
             : SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final artworkSize = (constraints.maxHeight * 0.42)
-                        .clamp(120.0, 340.0)
-                        .clamp(0.0, constraints.maxWidth - 40);
-                    return SingleChildScrollView(
-                      child: Center(
-                        child: ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 520),
-                          child: Padding(
-                            padding: const EdgeInsets.all(20),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Center(
-                                  child: MusicArtwork(
-                                    title: item.track.title,
-                                    size: artworkSize,
-                                    artwork: controller.loadArtwork?.call(item),
-                                  ),
+                    final artworkSize = (constraints.maxHeight * 0.378)
+                        .clamp(108.0, 306.0)
+                        .clamp(
+                          0.0,
+                          (constraints.maxWidth - 40).clamp(
+                            0.0,
+                            double.infinity,
+                          ),
+                        );
+                    return Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 520),
+                        child: Column(
+                          children: [
+                            Expanded(
+                              child: SingleChildScrollView(
+                                padding: const EdgeInsets.fromLTRB(
+                                  20,
+                                  20,
+                                  20,
+                                  24,
                                 ),
-                                const SizedBox(height: 28),
-                                Text(
-                                  item.track.title,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineSmall,
-                                ),
-                                if (item.track.artist != null)
-                                  Text(
-                                    item.track.artist!,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyLarge,
-                                  ),
-                                Visibility(
-                                  visible: item.track.album != null,
-                                  maintainState: true,
-                                  maintainAnimation: true,
-                                  maintainSize: true,
-                                  child: Text(
-                                    item.track.album ?? '专辑',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodyMedium,
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  controller.loading ||
-                                          controller.state.buffering
-                                      ? '正在载入音频…'
-                                      : '本地播放',
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .labelMedium,
-                                ),
-                                if (error != null)
-                                  Text(
-                                    error,
-                                    style: TextStyle(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .error,
-                                    ),
-                                  ),
-                                Visibility(
-                                  visible: controller.loading,
-                                  maintainState: true,
-                                  maintainAnimation: true,
-                                  maintainSize: true,
-                                  child: TextButton(
-                                    onPressed: controller.loading
-                                        ? controller.stop
-                                        : null,
-                                    child: const Text('取消播放准备'),
-                                  ),
-                                ),
-                                const SizedBox(height: 20),
-                                PlaybackProgress(controller: controller),
-                                const SizedBox(height: 12),
-                                Row(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
                                   children: [
-                                    Expanded(
-                                      child: TransportControls(
-                                        controller: controller,
-                                        expanded: true,
+                                    Center(
+                                      child: MusicArtwork(
+                                        title: item.track.title,
+                                        size: artworkSize,
+                                        artwork: controller.loadArtwork?.call(
+                                          item,
+                                        ),
                                       ),
                                     ),
-                                    IconButton(
-                                      tooltip: '播放队列',
-                                      icon: const Icon(Icons.queue_music),
-                                      onPressed: () => showPlaybackQueue(
-                                        context,
-                                        controller,
+                                    const SizedBox(height: 24),
+                                    KeyedSubtree(
+                                      key: ValueKey(
+                                        '${item.serverUri}#${item.track.id}',
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          ScrollingTrackText(
+                                            text: item.track.title,
+                                            style:
+                                                theme.textTheme.headlineSmall!,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          ScrollingTrackText(
+                                            text: item.track.artist ?? '',
+                                            style: theme.textTheme.bodyLarge!,
+                                          ),
+                                          const SizedBox(height: 4),
+                                          ScrollingTrackText(
+                                            text: item.track.album ?? '',
+                                            style: theme.textTheme.bodyMedium!,
+                                          ),
+                                        ],
                                       ),
                                     ),
+                                    const SizedBox(height: 16),
+                                    Text(
+                                      controller.loading ||
+                                              controller.state.buffering
+                                          ? '正在载入音频…'
+                                          : '本地播放',
+                                      style: theme.textTheme.labelMedium,
+                                    ),
+                                    if (error != null)
+                                      Text(
+                                        error,
+                                        style: TextStyle(
+                                          color: theme.colorScheme.error,
+                                        ),
+                                      ),
+                                    if (controller.loading)
+                                      Align(
+                                        alignment: Alignment.centerLeft,
+                                        child: TextButton(
+                                          onPressed: controller.stop,
+                                          child: const Text('取消播放准备'),
+                                        ),
+                                      ),
                                   ],
                                 ),
-                                const SizedBox(height: 24),
-                                ListTile(
-                                  contentPadding: EdgeInsets.zero,
-                                  title: const Text('播放队列'),
-                                  subtitle: Text(
-                                    '${controller.queue.length} 首曲目',
-                                  ),
-                                  trailing: const Icon(Icons.chevron_right),
-                                  onTap: () =>
-                                      showPlaybackQueue(context, controller),
-                                ),
-                              ],
+                              ),
                             ),
-                          ),
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  PlaybackProgress(controller: controller),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    item.track.bitrateKbps == null
+                                        ? '码率未知'
+                                        : '${item.track.bitrateKbps} kbps',
+                                    style: theme.textTheme.labelSmall,
+                                    maxLines: 1,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      VolumeButton(controller: controller),
+                                      Expanded(
+                                        child: TransportControls(
+                                          controller: controller,
+                                          expanded: true,
+                                        ),
+                                      ),
+                                      IconButton(
+                                        tooltip: '播放队列',
+                                        icon: const Icon(Icons.queue_music),
+                                        onPressed: () => showPlaybackQueue(
+                                          context,
+                                          controller,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     );

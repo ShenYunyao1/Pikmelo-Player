@@ -15,6 +15,7 @@ import 'package:pikmelo_player/playback/playback_engine.dart';
 import 'package:pikmelo_player/playback/ui/player_bar.dart';
 import 'package:pikmelo_player/playback/ui/now_playing_page.dart';
 import 'package:pikmelo_player/playback/ui/playback_controls.dart';
+import 'package:pikmelo_player/playback/ui/scrolling_track_text.dart';
 
 void main() {
   late PlaybackController controller;
@@ -64,6 +65,228 @@ void main() {
     await interruptions.close();
     await noisy.close();
   });
+
+  testWidgets(
+    'player controls are bottom anchored with one queue entry and bitrate',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      tester.view.padding = const FakeViewPadding(bottom: 24);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final track = PlaybackItem(
+        serverUri: item.serverUri,
+        path: item.path,
+        track: Track.fromJson({
+          'id': 'one',
+          'title': '曲目',
+          'artist': '歌手',
+          'album': '专辑',
+          'bitrate_kbps': 320,
+        }),
+      );
+      await tester.runAsync(() => controller.playQueue([track]));
+      await tester.pumpWidget(
+        MaterialApp(home: NowPlayingPage(controller: controller)),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('播放队列'), findsNothing);
+      expect(find.byTooltip('播放队列'), findsOneWidget);
+      expect(find.text('320 kbps'), findsOneWidget);
+      expect(find.byTooltip('音量'), findsOneWidget);
+      final controls = tester.getRect(find.byType(TransportControls));
+      expect(844 - controls.bottom, closeTo(32, 0.1));
+      expect(
+        tester.getTopLeft(find.byType(PlaybackProgress)).dy -
+            tester.getBottomRight(find.byType(SingleChildScrollView)).dy,
+        24,
+      );
+      expect(
+        tester.getTopLeft(find.text('320 kbps')).dy,
+        lessThan(controls.top),
+      );
+      expect(
+        tester.getBottomRight(find.byType(PlaybackProgress)).dy,
+        lessThan(tester.getTopLeft(find.text('320 kbps')).dy),
+      );
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'long metadata scrolls without restarting on progress and resets on a track change',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final long = List.filled(10, '很长的曲目信息 Long metadata ').join();
+      PlaybackItem track(String id) => PlaybackItem(
+        serverUri: item.serverUri,
+        path: '/$id.media',
+        track: Track.fromJson({
+          'id': id,
+          'title': '$long\n末行',
+          'artist': long,
+          'album': long,
+        }),
+      );
+      await tester.runAsync(
+        () => controller.playQueue([track('one'), track('two')]),
+      );
+      await tester.pumpWidget(
+        MaterialApp(home: NowPlayingPage(controller: controller)),
+      );
+      await tester.pump();
+      final lines = find.byType(ScrollingTrackText);
+      expect(lines, findsNWidgets(3));
+      for (final line in lines.evaluate()) {
+        for (final text
+            in find
+                .descendant(
+                  of: find.byWidget(line.widget),
+                  matching: find.byType(Text),
+                )
+                .evaluate()) {
+          expect((text.widget as Text).maxLines, 1);
+          expect((text.widget as Text).softWrap, false);
+          expect((text.widget as Text).data, isNot(contains('\n')));
+        }
+      }
+      double offset() => tester
+          .widget<Transform>(
+            find
+                .descendant(of: lines.first, matching: find.byType(Transform))
+                .first,
+          )
+          .transform
+          .storage[12];
+      expect(offset(), 0);
+      await tester.pump(const Duration(seconds: 2));
+      final moved = offset();
+      expect(moved, lessThan(0));
+      final controls = tester.getRect(find.byType(TransportControls));
+      await tester.runAsync(() => controller.seek(const Duration(seconds: 1)));
+      await tester.pump();
+      expect(offset(), closeTo(moved, 0.01));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(offset(), lessThan(moved));
+      await tester.runAsync(() => controller.jump(1));
+      await tester.pump();
+      await tester.pump();
+      expect(offset(), 0);
+      expect(tester.getRect(find.byType(TransportControls)), controls);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  testWidgets(
+    'volume opens above its button and vertical dragging changes app volume',
+    (tester) async {
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // Keep UI-only command futures on the widget test clock.
+      final controller = PlaybackController(
+        createEngine: () => throw StateError('Volume UI must not open audio'),
+        isAvailable: (_) => true,
+      );
+      controller.restoreQueue([item], volume: 40);
+      await tester.pumpWidget(
+        MaterialApp(home: NowPlayingPage(controller: controller)),
+      );
+      await tester.pumpAndSettle();
+      final before = tester.getRect(find.byType(TransportControls));
+      final anchor = tester.getRect(find.byTooltip('音量'));
+      expect(
+        anchor.left,
+        lessThan(tester.getRect(find.byTooltip('顺序播放')).left),
+      );
+      await tester.tap(find.byTooltip('音量'));
+      await tester.pumpAndSettle();
+      final rotated = find.byType(RotatedBox);
+      final slider = find.descendant(
+        of: rotated,
+        matching: find.byType(Slider),
+      );
+      final bounds = tester.getRect(slider);
+      expect(bounds.height, greaterThan(bounds.width));
+      expect(bounds.bottom, lessThan(anchor.top));
+      expect(find.text('40%'), findsOneWidget);
+      await tester.dragFrom(bounds.center, const Offset(0, -40));
+      await tester.pumpAndSettle();
+      expect(controller.volume, greaterThan(40));
+      expect(tester.getRect(find.byType(TransportControls)), before);
+      await tester.tapAt(const Offset(350, 200));
+      await tester.pumpAndSettle();
+      expect(find.byType(RotatedBox), findsNothing);
+      await tester.tap(find.byTooltip('播放选项'));
+      await tester.pumpAndSettle();
+      expect(find.text('音量'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      final closing = controller.shutdown();
+      await tester.pump();
+      await closing;
+      controller.dispose();
+    },
+  );
+
+  testWidgets(
+    'long metadata and unknown bitrate fit small and large accessible layouts',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final long = List.filled(20, 'Long 曲目信息 ').join();
+      await tester.runAsync(
+        () => controller.playQueue([
+          PlaybackItem(
+            serverUri: item.serverUri,
+            path: item.path,
+            track: Track.fromJson({'id': 'long', 'title': long}),
+          ),
+        ]),
+      );
+      for (final size in [
+        const Size(320, 640),
+        const Size(640, 360),
+        const Size(1280, 800),
+      ]) {
+        tester.view.physicalSize = size;
+        await tester.pumpWidget(
+          MaterialApp(
+            builder: (context, child) => MediaQuery(
+              data: MediaQuery.of(context).copyWith(
+                textScaler: const TextScaler.linear(1.8),
+                disableAnimations: true,
+              ),
+              child: child!,
+            ),
+            home: NowPlayingPage(controller: controller),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.byType(ScrollingTrackText), findsNWidgets(3));
+        expect(find.text('码率未知'), findsOneWidget);
+        expect(
+          tester.getBottomRight(find.byType(TransportControls)).dy,
+          lessThanOrEqualTo(size.height),
+        );
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.byTooltip('音量'));
+        await tester.pumpAndSettle();
+        expect(find.byType(RotatedBox), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tapAt(Offset(size.width - 16, 72));
+        await tester.pumpAndSettle();
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
   testWidgets(
     'loading cancellation keeps playback controls at fixed coordinates',

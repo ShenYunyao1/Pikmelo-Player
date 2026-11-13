@@ -99,10 +99,10 @@ class TransportControls extends StatelessWidget {
           icon: const Icon(Icons.skip_previous_rounded),
           onPressed: player.queue.isEmpty ? null : player.previous,
         ),
-        const SizedBox(width: 8),
+        if (!expanded) const SizedBox(width: 8),
         IconButton.filled(
           tooltip: player.state.playing ? '暂停' : '播放',
-          iconSize: expanded ? 36 : 26,
+          iconSize: expanded ? 32 : 26,
           padding: EdgeInsets.all(expanded ? 16 : 10),
           onPressed: player.queue.isEmpty || player.loading
               ? null
@@ -113,7 +113,7 @@ class TransportControls extends StatelessWidget {
                 : Icons.play_arrow_rounded,
           ),
         ),
-        const SizedBox(width: 8),
+        if (!expanded) const SizedBox(width: 8),
         IconButton(
           tooltip: '下一首',
           icon: const Icon(Icons.skip_next_rounded),
