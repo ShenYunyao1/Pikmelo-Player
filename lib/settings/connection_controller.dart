@@ -18,6 +18,7 @@ import 'models/server_connection.dart';
 import 'media_storage_controller.dart';
 import '../updates/update_controller.dart';
 import '../artwork/artwork_service.dart';
+import '../playback/playback_session.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
   ServerConnection connection,
@@ -73,6 +74,18 @@ class ConnectionController extends ChangeNotifier {
   Future<void>? _syncFuture;
   Future<RestoredConnection?>? _initialization;
   final _artwork = ArtworkService();
+  PlaybackSession? _playbackSession;
+  bool get restorePlaybackEnabled =>
+      mediaStorage?.store.setting('restore_playback_session') != 'false';
+  void setRestorePlayback(bool value) {
+    final session = _playbackSession;
+    if (session != null) {
+      session.setEnabled(value);
+    } else {
+      mediaStorage?.store.saveSetting('restore_playback_session', '$value');
+    }
+    notifyListeners();
+  }
 
   Future<Uint8List?> artworkFor(String id, {String? coverId}) {
     final library = _library;
@@ -251,10 +264,18 @@ class ConnectionController extends ChangeNotifier {
           ServerConnection.credentialFingerprint(apiKey),
           adoptLegacy: true,
         );
-        _readLibrary(store, connection);
-        _status = '已加载本地曲库';
         _scope =
             '${connection.key}:${ServerConnection.credentialFingerprint(apiKey)}';
+        _readLibrary(store, connection);
+        _status = '已加载本地曲库';
+      } else if (playback != null) {
+        _playbackSession = PlaybackSession(
+          store: store,
+          player: playback!,
+          scope: 'preferences-only',
+          serverUri: connection.uri,
+          restoreQueue: false,
+        );
       }
       notifyListeners();
       return (serverUri: connection.uri, apiKey: apiKey);
@@ -316,6 +337,8 @@ class ConnectionController extends ChangeNotifier {
     final version = ++_version;
     _activeClient?.close();
     if (_scope != scope) {
+      _playbackSession?.dispose();
+      _playbackSession = null;
       _playbackReset = playback?.clear() ?? Future.value();
       _playlists = const [];
       _library = null;
@@ -454,6 +477,14 @@ class ConnectionController extends ChangeNotifier {
         storage: mediaStorage,
       );
       _downloads!.addListener(_downloadsChanged);
+    }
+    if (_playbackSession == null && playback != null && _scope != null) {
+      _playbackSession = PlaybackSession(
+        store: store,
+        player: playback!,
+        scope: _scope!,
+        serverUri: connection.uri,
+      );
     }
   }
 
@@ -615,6 +646,7 @@ class ConnectionController extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _playbackSession?.dispose();
     playback?.removeListener(_playbackChanged);
     _activeClient?.close();
     unawaited(playback?.clear() ?? Future.value());

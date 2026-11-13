@@ -64,6 +64,28 @@ class PlaybackController extends ChangeNotifier {
   bool get playRequested => _playRequested;
   int get transportRevision => _transportRevision;
 
+  void restoreQueue(
+    List<PlaybackItem> items, {
+    int index = 0,
+    Duration position = Duration.zero,
+    Duration duration = Duration.zero,
+    PlaybackMode mode = PlaybackMode.sequence,
+    double volume = 100,
+  }) {
+    if (_disposed || _engine != null || _loading || _queue.isNotEmpty) return;
+    _queue = List.unmodifiable(items);
+    _index = items.isEmpty ? -1 : index.clamp(0, items.length - 1);
+    _mode = mode;
+    _volume = volume.clamp(0, 100);
+    _stopped = true;
+    _playRequested = false;
+    _state = PlaybackState(
+      position: items.isEmpty ? Duration.zero : position,
+      duration: items.isEmpty ? Duration.zero : duration,
+    );
+    _notify();
+  }
+
   void append(PlaybackItem item) {
     if (_disposed || !_available(item)) return;
     _queue = List.unmodifiable([

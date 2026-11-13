@@ -14,6 +14,9 @@ import 'package:pikmelo_player/infrastructure/storage/local_library_store.dart';
 import 'package:pikmelo_player/settings/connection_controller.dart';
 import 'package:pikmelo_player/settings/models/server_connection.dart';
 import 'package:pikmelo_player/library/ui/playlist_page.dart';
+import 'package:pikmelo_player/playback/playback_controller.dart';
+import 'package:pikmelo_player/playback/models/playback_item.dart';
+import 'package:pikmelo_player/library/models/track.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +80,53 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.runAsync(() => root.delete(recursive: true));
+  });
+
+  test('normal connection startup restores playback only for the saved credentials', () async {
+    controller.dispose();
+    PlaybackController player() => PlaybackController(
+      createEngine: () => throw StateError('Startup must not open audio'),
+      isAvailable: (_) => true,
+    );
+    ConnectionController connection(PlaybackController playback) =>
+        ConnectionController(
+          networkReader: () async => {'connected': true, 'cellular': false},
+          keyStore: keys,
+          openStore: () async => store,
+          playback: playback,
+          createClient: (_, _) =>
+              _ControlledClient()..health.complete({'version': 'test'}),
+        );
+    final first = player();
+    controller = connection(first);
+    await controller.connectAndSync('https://example.com', 'test-key');
+    first.restoreQueue(
+      [
+        PlaybackItem(
+          serverUri: controller.serverUri,
+          track: Track.fromJson(store.tracks(controller.serverUri).first),
+          path: '',
+        ),
+      ],
+      position: const Duration(seconds: 4),
+      duration: const Duration(seconds: 30),
+    );
+    controller.dispose();
+    await controller.downloadShutdown;
+    await first.shutdown();
+    final second = player();
+    controller = connection(second);
+    await controller.initialize();
+    expect(second.queue.single.track.id, 'track-1');
+    expect(second.state.position, const Duration(seconds: 4));
+    expect(second.stopped, isTrue);
+    await controller.refresh();
+    expect(second.queue, hasLength(1));
+    await controller.connectAndSync('https://example.com', 'rotated-key');
+    expect(second.queue, isEmpty);
+    controller.dispose();
+    await controller.downloadShutdown;
+    await second.shutdown();
   });
 
   test('controller connects once and exposes typed playlists', () async {

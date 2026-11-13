@@ -324,14 +324,17 @@ void main() {
     },
   );
 
-  test('task dismissal clears playback and system state', () async {
-    await controller.playQueue([item]);
-    await handler.onTaskRemoved();
-    await _tick();
-    expect(controller.queue, isEmpty);
-    expect(handler.playbackState.value.playing, isFalse);
-    expect(activations.last, isFalse);
-  });
+  test(
+    'task dismissal releases playback and retains the restorable queue',
+    () async {
+      await controller.playQueue([item]);
+      await handler.onTaskRemoved();
+      await _tick();
+      expect(controller.queue, hasLength(1));
+      expect(handler.playbackState.value.playing, isFalse);
+      expect(activations.last, isFalse);
+    },
+  );
   test(
     'shutdown waits for focus acquisition and abandons a late grant',
     () async {

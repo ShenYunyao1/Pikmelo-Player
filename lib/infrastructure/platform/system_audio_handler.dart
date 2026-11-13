@@ -203,7 +203,7 @@ class SystemAudioHandler extends BaseAudioHandler {
 
   @override
   Future<void> onTaskRemoved() async {
-    await _controller?.clear();
+    await _controller?.stop();
     await super.stop();
   }
 

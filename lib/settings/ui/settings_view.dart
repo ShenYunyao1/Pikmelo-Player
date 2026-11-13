@@ -5,6 +5,7 @@ import '../connection_controller.dart';
 import '../media_storage_controller.dart';
 import 'connection_card.dart';
 import '../../updates/ui/update_card.dart';
+import '../../playback/models/playback_state.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({
@@ -130,6 +131,52 @@ class SettingsView extends StatelessWidget {
               : '支持后台与锁屏播放，断开耳机时暂停',
         ),
       ),
+      if (controller.playback case final player?)
+        ListenableBuilder(
+          listenable: player,
+          builder: (context, _) => Column(
+            children: [
+              SwitchListTile(
+                title: const Text('启动时恢复播放队列'),
+                subtitle: const Text('恢复当前曲目和进度，保持暂停'),
+                value: controller.restorePlaybackEnabled,
+                onChanged: controller.mediaStorage == null
+                    ? null
+                    : controller.setRestorePlayback,
+              ),
+              ListTile(
+                title: const Text('播放模式'),
+                trailing: DropdownButton<PlaybackMode>(
+                  value: player.mode,
+                  items: [
+                    for (final mode in PlaybackMode.values)
+                      DropdownMenuItem(
+                        value: mode,
+                        child: Text(switch (mode) {
+                          PlaybackMode.sequence => '顺序播放',
+                          PlaybackMode.repeatAll => '列表循环',
+                          PlaybackMode.repeatOne => '单曲循环',
+                          PlaybackMode.shuffle => '随机播放',
+                        }),
+                      ),
+                  ],
+                  onChanged: (mode) {
+                    if (mode != null) player.setMode(mode);
+                  },
+                ),
+              ),
+              ListTile(
+                title: Text('应用音量 ${player.volume.round()}%'),
+                subtitle: Slider(
+                  value: player.volume,
+                  max: 100,
+                  label: '${player.volume.round()}%',
+                  onChanged: player.setVolume,
+                ),
+              ),
+            ],
+          ),
+        ),
       if (controller.updates case final updates?)
         UpdateCard(controller: updates),
       const ListTile(
