@@ -8,6 +8,7 @@ import '../infrastructure/storage/local_library_store.dart';
 import '../infrastructure/storage/media_files.dart';
 import '../library/models/track.dart';
 import 'lrc_parser.dart';
+import '../shared/diagnostics.dart';
 import 'models/lyric_document.dart';
 
 class LyricsRepository {
@@ -37,6 +38,7 @@ class LyricsRepository {
         .toString();
     final existing = _requests[key], retry = _retryAfter[key];
     if (existing != null && (retry == null || DateTime.now().isBefore(retry))) {
+      Diagnostics.event('lyrics.memory.hit');
       return existing;
     }
     if (_requests.length >= 32) {
@@ -44,6 +46,7 @@ class LyricsRepository {
       _requests.remove(_requests.keys.first);
     }
     _retryAfter.remove(key);
+    final elapsed = Stopwatch()..start();
     var retryable = false;
     final future = _load(
       scope,
@@ -63,6 +66,14 @@ class LyricsRepository {
 
     future.then<void>((value) {
       if (value == null || retryable) retryLater();
+      if (Diagnostics.enabled) {
+        Diagnostics.event('lyrics.loaded', {
+          'track': Diagnostics.identifier(track.id),
+          'source': value?.source.name,
+          'cues': value?.cues.length ?? 0,
+          'ms': elapsed.elapsedMilliseconds,
+        });
+      }
     }, onError: (Object _, StackTrace _) => retryLater());
     return future;
   }
@@ -118,15 +129,20 @@ class LyricsRepository {
       try {
         final cached = jsonDecode(store.setting(serverKey) ?? '{}') as Map;
         if (cached['revision'] == revision) text = cached['text'] as String?;
+        Diagnostics.event('lyrics.server_cache.read', {'hit': text != null});
       } catch (_) {
         /* Fetch uncached lyrics. */
       }
     }
     if (text == null) {
       try {
+        Diagnostics.event('lyrics.server.fetch');
         text = await fetchServer();
         if (!allowed()) return null;
         if (text != null) {
+          Diagnostics.event('lyrics.server_cache.write', {
+            'chars': text.length,
+          });
           store.saveSetting(
             serverKey,
             jsonEncode({'revision': revision, 'text': text}),

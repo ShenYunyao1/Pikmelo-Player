@@ -1,3 +1,4 @@
+import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:pikmelo_player/lyrics/models/lyric_document.dart';
 
 import 'dart:async';
@@ -48,6 +49,68 @@ void main() {
   tearDown(() {
     controller.dispose();
     store.close();
+  });
+
+  test('playback authorization reads only the selected record and observes revocation immediately', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pikmelo-authorize-',
+    );
+    final path = '${directory.path}/library.sqlite';
+    final local = await LocalLibraryStore.open(databasePath: path);
+    final uri = Uri.parse('https://example.com');
+    local.applySyncPages(uri, [await client.fetchSyncPage()]);
+    final raw = sql.sqlite3.open(path);
+    final server = raw
+        .select('SELECT server_key FROM tracks')
+        .first['server_key'];
+    raw.execute('INSERT INTO tracks(server_key,id,data) VALUES(?,?,?)', [
+      server,
+      'unrelated',
+      '{broken',
+    ]);
+    final dependencies = AppDependencies(
+      enableUpdates: false,
+      openStore: () async => local,
+      createPlaybackEngine: () => _ProgressEngine(),
+    );
+    try {
+      await dependencies.openStore();
+      final item = PlaybackItem(
+        serverUri: uri,
+        track: Track.fromJson({'id': 'track-1', 'title': 'one'}),
+        path: '',
+      );
+      expect(dependencies.playback.isAvailable(item), true);
+      raw.execute('UPDATE tracks SET data = ? WHERE id = ?', [
+        '{"id":"track-1","removed":true}',
+        'track-1',
+      ]);
+      expect(dependencies.playback.isAvailable(item), false);
+      raw.execute('UPDATE tracks SET data = ? WHERE id = ?', [
+        '{"id":"track-1","missing":true}',
+        'track-1',
+      ]);
+      expect(dependencies.playback.isAvailable(item), false);
+      raw.execute('UPDATE tracks SET data = ? WHERE id = ?', [
+        '{"id":"track-1"}',
+        'track-1',
+      ]);
+      expect(dependencies.playback.isAvailable(item), true);
+      expect(
+        dependencies.playback.isAvailable(
+          PlaybackItem(
+            serverUri: Uri.parse('https://other.example'),
+            track: item.track,
+            path: '',
+          ),
+        ),
+        false,
+      );
+    } finally {
+      raw.close();
+      await dependencies.dispose();
+      await directory.delete(recursive: true);
+    }
   });
 
   test(

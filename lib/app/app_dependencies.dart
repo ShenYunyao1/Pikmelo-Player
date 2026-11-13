@@ -1,7 +1,7 @@
 import '../infrastructure/server/pikmelo_api_client.dart';
 import '../infrastructure/platform/system_media_service.dart';
 import '../infrastructure/playback/media_kit_playback_engine.dart';
-import '../library/library_repository.dart';
+import '../shared/diagnostics.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_engine.dart';
 import '../infrastructure/storage/api_key_store.dart';
@@ -37,14 +37,22 @@ class AppDependencies {
   LocalLibraryStore? _openedStore;
   late final playback = PlaybackController(
     createEngine: _createPlaybackEngine,
-    isAvailable: (item) =>
-        _openedStore != null &&
-        LibraryRepository(_openedStore!)
-            .tracks(item.serverUri)
-            .any(
-              (track) =>
-                  track.id == item.track.id && !track.missing && !track.removed,
-            ),
+    isAvailable: (item) {
+      final elapsed = Stopwatch()..start();
+      final track = _openedStore?.track(item.serverUri, item.track.id);
+      final available =
+          track != null &&
+          track['id'] == item.track.id &&
+          track['missing'] != true &&
+          track['removed'] != true;
+      if (Diagnostics.enabled) {
+        Diagnostics.event('playback.availability', {
+          'us': elapsed.elapsedMicroseconds,
+          'allowed': available,
+        });
+      }
+      return available;
+    },
   );
   Future<LocalLibraryStore>? _storeFuture;
   bool _disposed = false;

@@ -9,6 +9,7 @@ import 'package:sqlite3/sqlite3.dart';
 import '../../settings/models/server_connection.dart';
 import '../server/sync_page.dart';
 import 'media_files.dart';
+import '../../shared/diagnostics.dart';
 
 class LocalLibraryStore {
   LocalLibraryStore._(this._database);
@@ -28,8 +29,17 @@ class LocalLibraryStore {
       'local_lyrics_${sha256.convert(utf8.encode(path))}';
   Map<String, dynamic>? localMetadata(String path) =>
       _localResource(path, _metadataKey(path));
-  Map<String, dynamic>? localLyrics(String path) =>
-      _localResource(path, _lyricsKey(path));
+  Map<String, dynamic>? localLyrics(String path) {
+    final result = _localResource(path, _lyricsKey(path));
+    if (Diagnostics.enabled) {
+      Diagnostics.event('lyrics.cache.read', {
+        'file': Diagnostics.identifier(path),
+        'hit': result != null,
+      });
+    }
+    return result;
+  }
+
   Map<String, dynamic>? _localResource(String path, String key) {
     try {
       final raw = setting(key);
@@ -45,8 +55,16 @@ class LocalLibraryStore {
 
   void saveLocalMetadata(String path, Map<String, dynamic> metadata) =>
       _saveResource(path, _metadataKey(path), metadata);
-  void saveLocalLyrics(String path, String? text) =>
-      _saveResource(path, _lyricsKey(path), {'text': text});
+  void saveLocalLyrics(String path, String? text) {
+    _saveResource(path, _lyricsKey(path), {'text': text});
+    if (Diagnostics.enabled) {
+      Diagnostics.event('lyrics.cache.write', {
+        'file': Diagnostics.identifier(path),
+        'chars': text?.length ?? 0,
+      });
+    }
+  }
+
   void _saveResource(String path, String key, Map<String, dynamic> metadata) =>
       saveSetting(
         key,
@@ -175,10 +193,24 @@ class LocalLibraryStore {
     return rows.isEmpty ? null : rows.single['value'] as String;
   }
 
-  void saveSetting(String key, String value) => _database.execute(
-    'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
-    [key, value],
-  );
+  void saveSetting(String key, String value) {
+    final elapsed = Stopwatch()..start();
+    _database.execute(
+      'INSERT OR REPLACE INTO app_settings (key, value) VALUES (?, ?)',
+      [key, value],
+    );
+    if (Diagnostics.enabled) {
+      Diagnostics.event('settings.write', {
+        'kind': key.startsWith('playback_session_')
+            ? 'playback_session'
+            : key == 'playback_preferences'
+            ? key
+            : 'other',
+        'chars': value.length,
+        'us': elapsed.elapsedMicroseconds,
+      });
+    }
+  }
 
   void retainMedia(Uri uri, String id, {required bool pinned}) =>
       _database.execute(
@@ -723,6 +755,18 @@ class LocalLibraryStore {
           ),
         )
         .toList(growable: false);
+  }
+
+  Map<String, dynamic>? track(Uri serverUri, String id) {
+    final rows = _database.select(
+      'SELECT data FROM tracks WHERE server_key = ? AND id = ?',
+      [_serverKey(serverUri), id],
+    );
+    return rows.isEmpty
+        ? null
+        : Map<String, dynamic>.from(
+            jsonDecode(rows.single['data'] as String) as Map,
+          );
   }
 
   List<Map<String, dynamic>> tracks(Uri serverUri) {

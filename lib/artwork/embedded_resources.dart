@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../infrastructure/storage/media_files.dart';
 import 'audio_properties.dart';
+import '../shared/diagnostics.dart';
 import 'synchronized_lyrics.dart';
 
 class EmbeddedResources {
@@ -28,6 +29,13 @@ Future<EmbeddedResources> readEmbeddedResources(
   Future<Directory> Function()? temporaryDirectory,
 }) async {
   Directory? temporary;
+  final elapsed = Stopwatch()..start();
+  if (Diagnostics.enabled) {
+    Diagnostics.event('embedded.read.start', {
+      'file': Diagnostics.identifier(path),
+      'document': files.isDocument(path),
+    });
+  }
   try {
     var localPath = path;
     if (files.isDocument(path)) {
@@ -41,8 +49,24 @@ Future<EmbeddedResources> readEmbeddedResources(
         files.length(path),
       );
     }
-    return await Isolate.run(() => parseEmbeddedResources(localPath));
-  } catch (_) {
+    final resource = await Isolate.run(() => parseEmbeddedResources(localPath));
+    if (Diagnostics.enabled) {
+      Diagnostics.event('embedded.read.complete', {
+        'file': Diagnostics.identifier(path),
+        'ms': elapsed.elapsedMilliseconds,
+        'lyricsChars': resource.lyrics?.length ?? 0,
+        'coverBytes': resource.cover?.length ?? 0,
+      });
+    }
+    return resource;
+  } catch (error) {
+    if (Diagnostics.enabled) {
+      Diagnostics.event('embedded.read.failed', {
+        'file': Diagnostics.identifier(path),
+        'ms': elapsed.elapsedMilliseconds,
+        'errorType': error.runtimeType.toString(),
+      });
+    }
     return const EmbeddedResources(readSucceeded: false);
   } finally {
     if (temporary != null) await temporary.delete(recursive: true);

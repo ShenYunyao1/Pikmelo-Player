@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../playback/playback_controller.dart';
 import '../playback/models/playback_item.dart';
 import 'models/lyric_document.dart';
+import '../shared/diagnostics.dart';
 
 class LyricsController extends ChangeNotifier {
   LyricsController(this.player) {
@@ -43,7 +44,9 @@ class LyricsController extends ChangeNotifier {
                     (position - _reported!).abs() >
                         const Duration(seconds: 1)));
     if (moved || advancing != _advancing) {
-      _anchor = position;
+      // The final paused position can follow the playing=false event.
+      // Freeze the current interpolation until that position arrives.
+      _anchor = moved || advancing || player.stopped ? position : _position;
       _elapsed.reset();
       if (advancing) {
         _elapsed.start();
@@ -81,12 +84,18 @@ class LyricsController extends ChangeNotifier {
     Future<LyricDocument?>.sync(() => load!(item!)).then<void>(
       (value) {
         if (_disposed || generation != _generation) return;
+        Diagnostics.event('lyrics.presentation.ready', {
+          'cues': value?.cues.length ?? 0,
+        });
         document = value;
         loading = false;
         _locate(jump: true, force: true);
       },
       onError: (Object error, StackTrace stack) {
         if (_disposed || generation != _generation) return;
+        Diagnostics.event('lyrics.presentation.failed', {
+          'errorType': error.runtimeType.toString(),
+        });
         loading = false;
         unavailable = true;
         notifyListeners();
@@ -115,6 +124,13 @@ class LyricsController extends ChangeNotifier {
     if (nextIndex != index || force) {
       snap = jump || nextIndex != index + 1;
       index = nextIndex;
+      Diagnostics.event('lyrics.position', {
+        'index': index,
+        'engineMs': player.state.position.inMilliseconds,
+        'projectedMs': _position.inMilliseconds,
+        'snap': snap,
+        'advancing': _advancing,
+      });
       notifyListeners();
     }
     if (!_advancing || index + 1 >= doc.cues.length) return;

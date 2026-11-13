@@ -4,6 +4,8 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../../shared/diagnostics.dart';
+
 /// Access to local paths and Android document URIs.
 class MediaFiles {
   static Future<Directory> defaultDirectory() async {
@@ -78,6 +80,12 @@ class MediaFiles {
   }
 
   Future<void> delete(String path) async {
+    if (Diagnostics.enabled) {
+      Diagnostics.event('media.delete', {
+        'file': Diagnostics.identifier(path),
+        'document': isDocument(path),
+      });
+    }
     _deleting.add(path);
     try {
       await Future.wait(_reads[path]?.toList() ?? <Future<void>>[]);
@@ -123,6 +131,14 @@ class MediaFiles {
     int expectedSize, {
     void Function(String path)? onCreated,
   }) async {
+    if (Diagnostics.enabled) {
+      Diagnostics.event('media.copy', {
+        'source': Diagnostics.identifier(source),
+        'documentSource': isDocument(source),
+        'documentTarget': isDocument(directory),
+        'bytes': expectedSize,
+      });
+    }
     if (isDocument(source) || isDocument(directory)) {
       final path = await android.invokeMethod<String>('create', {
         'directory': directory,

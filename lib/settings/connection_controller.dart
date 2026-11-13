@@ -22,6 +22,7 @@ import '../artwork/artwork_service.dart';
 import '../playback/playback_session.dart';
 import '../artwork/embedded_resources.dart';
 import '../lyrics/lyrics_repository.dart';
+import '../shared/diagnostics.dart';
 import '../lyrics/models/lyric_document.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
@@ -679,6 +680,12 @@ class ConnectionController extends ChangeNotifier {
         scope: _scope!,
         serverUri: connection.uri,
       );
+    }
+    if (Diagnostics.enabled) {
+      Diagnostics.event('library.ready', {
+        'tracks': store.tracks(connection.uri).length,
+        'offline': store.offlineTracks(serverUri: connection.uri).length,
+      });
     }
     _loadLocalMetadata(store, connection);
     playback?.invalidateLyrics();

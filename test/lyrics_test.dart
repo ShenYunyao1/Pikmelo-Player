@@ -319,6 +319,20 @@ void main() {
       expect(lyrics.index, 1);
       lyrics.dispose();
     });
+    test('pause keeps the interpolated cue until the final engine position arrives', () async {
+      player.loadLyrics = (_) async =>
+          parseLyrics('[00:00]one\n[00:00.040]two', source);
+      final lyrics = LyricsController(player);
+      await player.playQueue(items);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(lyrics.index, 1);
+      engines.last.emit(0, playing: false);
+      expect(lyrics.index, 1);
+      engines.last.emit(70, playing: false);
+      expect(lyrics.index, 1);
+      lyrics.dispose();
+    });
+
     testWidgets(
       'three lyric rows transition without moving the footer at supported sizes',
       (tester) async {
