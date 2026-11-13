@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/music_artwork.dart';
+import 'player_artwork.dart';
 import '../playback_controller.dart';
 import '../../library/ui/track_details.dart';
 import 'playback_controls.dart';
@@ -72,10 +72,11 @@ class QueueContents extends StatelessWidget {
                       selected: index == controller.currentIndex,
                       selectedTileColor: Theme.of(context).colorScheme.primary
                           .withValues(alpha: 0.1),
-                      leading: MusicArtwork(
-                        title: item.track.title,
+                      leading: PlayerArtwork(
+                        item: item,
                         size: 40,
-                        artwork: controller.loadArtwork?.call(item),
+                        loadArtwork: controller.loadArtwork,
+                        revision: controller.artworkRevision?.call() ?? 0,
                       ),
                       title: Text(
                         item.track.title,

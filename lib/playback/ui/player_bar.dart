@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../shared/widgets/music_artwork.dart';
+import 'player_artwork.dart';
 import '../playback_controller.dart';
 import 'now_playing_page.dart';
 import 'playback_controls.dart';
@@ -46,10 +46,11 @@ class PlayerBar extends StatelessWidget {
                         ),
                         child: Row(
                           children: [
-                            MusicArtwork(
-                              title: item.track.title,
+                            PlayerArtwork(
+                              item: item,
                               size: 48,
-                              artwork: controller.loadArtwork?.call(item),
+                              loadArtwork: controller.loadArtwork,
+                              revision: controller.artworkRevision?.call() ?? 0,
                             ),
                             const SizedBox(width: 12),
                             Expanded(

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../library/ui/track_details.dart';
-import '../../shared/widgets/music_artwork.dart';
+import 'player_artwork.dart';
 import '../playback_controller.dart';
 import 'playback_controls.dart';
 import 'queue_page.dart';
@@ -83,12 +83,14 @@ class NowPlayingPage extends StatelessWidget {
                                       CrossAxisAlignment.stretch,
                                   children: [
                                     Center(
-                                      child: MusicArtwork(
-                                        title: item.track.title,
+                                      child: PlayerArtwork(
+                                        item: item,
                                         size: artworkSize,
-                                        artwork: controller.loadArtwork?.call(
-                                          item,
-                                        ),
+                                        loadArtwork: controller.loadArtwork,
+                                        revision:
+                                            controller.artworkRevision
+                                                ?.call() ??
+                                            0,
                                       ),
                                     ),
                                     const SizedBox(height: 24),

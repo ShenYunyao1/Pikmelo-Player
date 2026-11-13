@@ -76,57 +76,89 @@ class _ScrollingTrackTextState extends State<ScrollingTrackText>
       return Semantics(
         label: text,
         child: ExcludeSemantics(
-          child: SizedBox(
-            height: height,
-            child: scrolling
-                ? ClipRect(
-                    child: OverflowBox(
-                      alignment: AlignmentDirectional.centerStart,
-                      maxWidth: double.infinity,
-                      child: AnimatedBuilder(
+          child: RepaintBoundary(
+            child: SizedBox(
+              height: height,
+              child: scrolling
+                  ? Flow(
+                      delegate: _ScrollingTextFlow(
                         animation: _animation,
-                        builder: (context, _) {
-                          final pause = 1000 / (travel + 1000);
-                          final progress =
-                              ((_animation.value - pause) / (1 - pause)).clamp(
-                                0.0,
-                                1.0,
-                              );
-                          return Transform.translate(
-                            offset: Offset(
-                              (direction == TextDirection.ltr ? -1 : 1) *
-                                  distance *
-                                  progress,
-                              0,
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              textDirection: direction,
-                              children: [
-                                Text(
-                                  text,
-                                  style: style,
-                                  maxLines: 1,
-                                  softWrap: false,
-                                ),
-                                const SizedBox(width: 32),
-                                Text(
-                                  text,
-                                  style: style,
-                                  maxLines: 1,
-                                  softWrap: false,
-                                ),
-                              ],
-                            ),
-                          );
-                        },
+                        distance: distance,
+                        direction: direction,
+                        pause: 1000 / (travel + 1000),
                       ),
-                    ),
-                  )
-                : line,
+                      children: [
+                        RepaintBoundary(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            textDirection: direction,
+                            children: [
+                              Text(
+                                text,
+                                style: style,
+                                maxLines: 1,
+                                softWrap: false,
+                              ),
+                              const SizedBox(width: 32),
+                              Text(
+                                text,
+                                style: style,
+                                maxLines: 1,
+                                softWrap: false,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  : line,
+            ),
           ),
         ),
       );
     },
   );
+}
+
+class _ScrollingTextFlow extends FlowDelegate {
+  _ScrollingTextFlow({
+    required this.animation,
+    required this.distance,
+    required this.direction,
+    required this.pause,
+  }) : super(repaint: animation);
+  final Animation<double> animation;
+  final double distance;
+  final TextDirection direction;
+  final double pause;
+
+  @override
+  BoxConstraints getConstraintsForChild(
+    int index,
+    BoxConstraints constraints,
+  ) => BoxConstraints.tightFor(
+    width: distance * 2 - 32,
+    height: constraints.maxHeight,
+  );
+
+  @override
+  void paintChildren(FlowPaintingContext context) {
+    final progress = ((animation.value - pause) / (1 - pause)).clamp(0.0, 1.0);
+    final offset = direction == TextDirection.ltr
+        ? -distance * progress
+        : context.size.width -
+              context.getChildSize(0)!.width +
+              distance * progress;
+    context.paintChild(0, transform: Matrix4.translationValues(offset, 0, 0));
+  }
+
+  @override
+  bool shouldRepaint(_ScrollingTextFlow oldDelegate) =>
+      oldDelegate.distance != distance ||
+      oldDelegate.direction != direction ||
+      oldDelegate.pause != pause ||
+      oldDelegate.animation != animation;
+  @override
+  bool shouldRelayout(_ScrollingTextFlow oldDelegate) =>
+      oldDelegate.distance != distance;
 }

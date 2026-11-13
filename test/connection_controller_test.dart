@@ -18,6 +18,8 @@ import 'package:pikmelo_player/settings/connection_controller.dart';
 import 'package:pikmelo_player/settings/models/server_connection.dart';
 import 'package:pikmelo_player/library/ui/playlist_page.dart';
 import 'package:pikmelo_player/playback/playback_controller.dart';
+import 'package:pikmelo_player/playback/playback_engine.dart';
+import 'package:pikmelo_player/playback/models/playback_state.dart';
 import 'package:pikmelo_player/playback/models/playback_item.dart';
 import 'package:pikmelo_player/library/models/track.dart';
 import 'package:pikmelo_player/library/models/playlist.dart';
@@ -45,6 +47,50 @@ void main() {
     controller.dispose();
     store.close();
   });
+
+  test(
+    'single-track progress does not repeatedly scan and notify cache storage',
+    () async {
+      controller.dispose();
+      final engine = _ProgressEngine();
+      final player = PlaybackController(
+        createEngine: () => engine,
+        isAvailable: (_) => true,
+      );
+      controller = ConnectionController(
+        networkReader: () async => {'connected': true, 'cellular': false},
+        keyStore: keys,
+        openStore: () async => store,
+        createClient: (_, _) => client,
+        playback: player,
+      );
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      player.resolveSource = (_) async => '/one.media';
+      player.setDefaultMode(PlaybackMode.repeatOne);
+      await player.playQueue([
+        PlaybackItem(
+          serverUri: controller.serverUri,
+          path: '/one.media',
+          track: Track.fromJson(store.tracks(controller.serverUri).first),
+        ),
+      ]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      var notifications = 0;
+      controller.addListener(() => notifications++);
+      for (var i = 1; i <= 5; i++) {
+        await player.seek(Duration(seconds: i));
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+      expect(notifications, 0);
+      controller.setPlaybackCacheLimit(256 * 1024 * 1024);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(notifications, greaterThan(0));
+      controller.dispose();
+      await controller.downloadShutdown;
+      await player.shutdown();
+    },
+  );
 
   testWidgets('playlist details show the server description', (tester) async {
     client.playlistFields = {'description': '  服务器上的歌单简介\n第二行内容  '};
@@ -999,4 +1045,29 @@ class _ControlledClient extends PikmeloApiClient {
     closed = true;
     super.close();
   }
+}
+
+class _ProgressEngine implements PlaybackEngine {
+  final _events = StreamController<PlaybackState>.broadcast(sync: true);
+  PlaybackState _state = const PlaybackState(duration: Duration(seconds: 60));
+  void _emit(PlaybackState state) {
+    _state = state;
+    _events.add(state);
+  }
+
+  @override
+  Stream<PlaybackState> get states => _events.stream;
+  @override
+  Future<void> open(String path) async => _emit(_state);
+  @override
+  Future<void> play() async => _emit(_state.copyWith(playing: true));
+  @override
+  Future<void> pause() async => _emit(_state.copyWith(playing: false));
+  @override
+  Future<void> seek(Duration position) async =>
+      _emit(_state.copyWith(position: position));
+  @override
+  Future<void> setVolume(double volume) async {}
+  @override
+  Future<void> dispose() => _events.close();
 }

@@ -44,6 +44,7 @@ class ConnectionController extends ChangeNotifier {
     playback?.loadMetadata = (item) => item.serverUri == serverUri
         ? metadataFor(item.track.id)
         : Future.value();
+    playback?.artworkRevision = () => mediaStorage?.networkRevision ?? 0;
     playback?.loadArtwork = (item) => item.serverUri == serverUri
         ? artworkFor(item.track.id)
         : Future.value();
@@ -648,14 +649,14 @@ class ConnectionController extends ChangeNotifier {
       return;
     }
     final next = player.upcoming;
+    final key =
+        '${identityHashCode(manager)}:${player.current?.track.id}:${next?.track.id}:${mediaStorage?.mobilePolicy}';
+    if (_prefetchKey == key) return;
+    _prefetchKey = key;
     if (next == null || identical(next, player.current)) {
       _trimCache();
       return;
     }
-    final key =
-        '${identityHashCode(manager)}:${player.current?.track.id}:${next.track.id}:${mediaStorage?.mobilePolicy}';
-    if (_prefetchKey == key) return;
-    _prefetchKey = key;
     unawaited(
       manager
           .ensureReady(next.track, purpose: DownloadPurpose.prefetch)

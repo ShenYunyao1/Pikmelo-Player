@@ -13,6 +13,7 @@ import 'package:pikmelo_player/playback/models/playback_state.dart';
 import 'package:pikmelo_player/playback/playback_controller.dart';
 import 'package:pikmelo_player/playback/playback_engine.dart';
 import 'package:pikmelo_player/playback/ui/player_bar.dart';
+import 'package:pikmelo_player/playback/ui/queue_page.dart';
 import 'package:pikmelo_player/playback/ui/now_playing_page.dart';
 import 'package:pikmelo_player/playback/ui/playback_controls.dart';
 import 'package:pikmelo_player/playback/ui/scrolling_track_text.dart';
@@ -65,6 +66,47 @@ void main() {
     await interruptions.close();
     await noisy.close();
   });
+
+  for (final surface in ['page', 'bar', 'queue']) {
+    testWidgets('$surface progress refreshes reuse the artwork request', (
+      tester,
+    ) async {
+      handler.attach(null);
+      var requests = 0;
+      controller.loadArtwork = (_) {
+        requests++;
+        return Future.value(null);
+      };
+      final second = PlaybackItem(
+        serverUri: item.serverUri,
+        path: '/two.media',
+        track: Track.fromJson({'id': 'two', 'title': 'Second'}),
+      );
+      await tester.runAsync(() => controller.playQueue([item, second]));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: switch (surface) {
+              'bar' => PlayerBar(controller: controller),
+              'queue' => QueueContents(controller: controller),
+              _ => NowPlayingPage(controller: controller),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(requests, surface == 'queue' ? 2 : 1);
+      for (var index = 1; index <= 5; index++) {
+        await tester.runAsync(() => controller.seek(Duration(seconds: index)));
+        await tester.pumpAndSettle();
+      }
+      expect(requests, surface == 'queue' ? 2 : 1);
+      await tester.runAsync(() => controller.jump(1));
+      await tester.pumpAndSettle();
+      expect(requests, 2);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   testWidgets(
     'transport trio is centered with symmetric action slots at every width',
@@ -200,14 +242,15 @@ void main() {
           expect((text.widget as Text).data, isNot(contains('\n')));
         }
       }
-      double offset() => tester
-          .widget<Transform>(
-            find
-                .descendant(of: lines.first, matching: find.byType(Transform))
-                .first,
-          )
-          .transform
-          .storage[12];
+      double offset() =>
+          tester
+              .getTopLeft(
+                find
+                    .descendant(of: lines.first, matching: find.byType(Text))
+                    .first,
+              )
+              .dx -
+          tester.getTopLeft(lines.first).dx;
       expect(offset(), 0);
       await tester.pump(const Duration(seconds: 2));
       final moved = offset();
