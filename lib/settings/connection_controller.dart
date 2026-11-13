@@ -21,6 +21,8 @@ import '../updates/update_controller.dart';
 import '../artwork/artwork_service.dart';
 import '../playback/playback_session.dart';
 import '../artwork/embedded_resources.dart';
+import '../lyrics/lyrics_repository.dart';
+import '../lyrics/models/lyric_document.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
   ServerConnection connection,
@@ -39,6 +41,7 @@ class ConnectionController extends ChangeNotifier {
     this.updates,
   }) {
     playback?.resolveSource = _prepareSource;
+    playback?.loadLyrics = _loadLyrics;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
     playback?.addListener(_playbackChanged);
     playback?.loadMetadata = (item) => item.serverUri == serverUri
@@ -81,6 +84,11 @@ class ConnectionController extends ChangeNotifier {
   Future<RestoredConnection?>? _initialization;
   final _embedded = EmbeddedResourceReader();
   late final _artwork = ArtworkService(readEmbedded: _embedded.read);
+  late final _lyrics = LyricsRepository(readEmbedded: _embedded.read);
+  Future<Map<String, String?>>? _serverLyricsWork;
+  String? _serverLyricsScope;
+  DateTime? _serverLyricsChecked;
+  PikmeloApiClient? _lyricsClient;
   Future<void>? _metadataWork;
   bool _metadataAgain = false;
 
@@ -142,6 +150,7 @@ class ConnectionController extends ChangeNotifier {
           (metadata['title'] as String).trim().isEmpty) {
         metadata.remove('title');
       }
+      if (resource.readSucceeded) store.saveLocalLyrics(path, resource.lyrics);
       store.saveLocalMetadata(path, metadata);
       playback?.updateMetadata(serverUri, library.tracks(serverUri));
       notifyListeners();
@@ -150,6 +159,103 @@ class ConnectionController extends ChangeNotifier {
         .tracks(serverUri)
         .where((track) => track.id == id)
         .firstOrNull;
+  }
+
+  Future<LyricDocument?> _loadLyrics(PlaybackItem item) {
+    final scope = _scope,
+        library = _library,
+        storage = mediaStorage,
+        key = _apiKey;
+    if (_disposed ||
+        scope == null ||
+        library == null ||
+        storage == null ||
+        key == null ||
+        item.serverUri != serverUri) {
+      return Future.value();
+    }
+    final track = storage.store
+        .tracks(serverUri)
+        .map(Track.fromJson)
+        .where(
+          (track) =>
+              track.id == item.track.id && !track.removed && !track.missing,
+        )
+        .firstOrNull;
+    if (track == null) return Future.value();
+    final path = library.offlineSource(serverUri, track.id);
+    bool allowed() =>
+        !_disposed &&
+        _scope == scope &&
+        _library != null &&
+        _library!.offlineSource(serverUri, track.id) == path &&
+        _library!
+            .tracks(serverUri)
+            .any(
+              (track) =>
+                  track.id == item.track.id && !track.removed && !track.missing,
+            );
+    return _lyrics.load(
+      scope: scope,
+      track: track,
+      path: path,
+      store: storage.store,
+      retryToken: '${storage.networkRevision}:${playback?.lyricsRevision}',
+      allowed: allowed,
+      fetchServer: () async => (await _fetchServerLyrics(scope, key))[track.id],
+    );
+  }
+
+  Future<Map<String, String?>> _fetchServerLyrics(String scope, String key) {
+    final existing = _serverLyricsWork;
+    if (existing != null &&
+        _serverLyricsScope == scope &&
+        _serverLyricsChecked != null &&
+        DateTime.now().difference(_serverLyricsChecked!) <
+            const Duration(minutes: 5)) {
+      return existing;
+    }
+    final connection = _connection;
+    _serverLyricsScope = scope;
+    _serverLyricsChecked = DateTime.now();
+    final future = () async {
+      await mediaStorage!.ready;
+      await mediaStorage!.refreshNetwork();
+      if (_disposed || _scope != scope || !mediaStorage!.connected) {
+        throw const LyricsUnavailable();
+      }
+      final client = _createClient(connection, key);
+      _lyricsClient = client;
+      try {
+        final lyrics = <String, String?>{};
+        final cursors = <String>{};
+        String? cursor;
+        do {
+          final page = await client.fetchSyncPage(cursor: cursor);
+          if (_disposed || _scope != scope) throw const LyricsUnavailable();
+          for (final data in page.changedTracks) {
+            final track = Track.fromJson(data);
+            if (!track.missing && !track.removed) {
+              lyrics[track.id] = track.lyrics;
+            }
+          }
+          if (!page.hasMore) return lyrics;
+          if (!cursors.add(page.cursor)) throw const FormatException('同步游标未推进');
+          cursor = page.cursor;
+        } while (true);
+      } finally {
+        client.close();
+        if (identical(_lyricsClient, client)) _lyricsClient = null;
+      }
+    }();
+    _serverLyricsWork = future;
+    future.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace _) {
+        if (identical(_serverLyricsWork, future)) _serverLyricsChecked = null;
+      },
+    );
+    return future;
   }
 
   PlaybackSession? _playbackSession;
@@ -421,6 +527,7 @@ class ConnectionController extends ChangeNotifier {
     if (_busy && _scope == scope) return _syncFuture!;
     final version = ++_version;
     _activeClient?.close();
+    _lyricsClient?.close();
     if (_scope != scope) {
       _playbackSession?.dispose();
       _playbackSession = null;
@@ -574,13 +681,24 @@ class ConnectionController extends ChangeNotifier {
       );
     }
     _loadLocalMetadata(store, connection);
+    playback?.invalidateLyrics();
   }
 
+  String? _lyricsSourceKey;
   void _downloadsChanged() {
     if (!_disposed) {
       final storage = mediaStorage;
       if (storage != null && _library != null) {
         _loadLocalMetadata(storage.store, _connection);
+      }
+      final item = playback?.current;
+      if (item != null) {
+        final source = _library?.offlineSource(item.serverUri, item.track.id);
+        final sourceKey = '$_scope|${item.track.id}|$source';
+        if (_lyricsSourceKey != sourceKey) {
+          _lyricsSourceKey = sourceKey;
+          playback?.invalidateLyrics();
+        }
       }
       notifyListeners();
       _trimCache();
@@ -600,6 +718,7 @@ class ConnectionController extends ChangeNotifier {
     final revision = mediaStorage?.networkRevision ?? -1;
     if (revision != _networkRevision) {
       _networkRevision = revision;
+      playback?.invalidateLyrics();
       _prefetchKey = null;
       _playbackChanged();
     }
@@ -741,11 +860,16 @@ class ConnectionController extends ChangeNotifier {
     _playbackSession?.dispose();
     playback?.removeListener(_playbackChanged);
     _activeClient?.close();
+    _lyricsClient?.close();
     unawaited(playback?.clear() ?? Future.value());
     final closing = Future.wait([
       _detachDownloads(),
       _metadataWork ?? Future.value(),
       _embedded.idle,
+      (_serverLyricsWork ?? Future.value(<String, String?>{})).then<void>(
+        (_) {},
+        onError: (Object _, StackTrace _) {},
+      ),
     ]).then<void>((_) {});
     mediaStorage?.removeListener(_storageChanged);
     final storage = mediaStorage;

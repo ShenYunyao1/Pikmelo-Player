@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../library/ui/track_details.dart';
+import '../../lyrics/ui/three_line_lyrics.dart';
 import 'player_artwork.dart';
 import '../playback_controller.dart';
 import 'playback_controls.dart';
@@ -15,7 +16,8 @@ class NowPlayingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: controller,
-    builder: (context, _) {
+    child: ThreeLineLyrics(player: controller),
+    builder: (context, lyrics) {
       final item = controller.current;
       final error = controller.state.error ?? controller.systemError;
       final theme = Theme.of(context);
@@ -56,15 +58,18 @@ class NowPlayingPage extends StatelessWidget {
             : SafeArea(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    final artworkSize = (constraints.maxHeight * 0.378)
-                        .clamp(108.0, 306.0)
-                        .clamp(
-                          0.0,
-                          (constraints.maxWidth - 40).clamp(
-                            0.0,
-                            double.infinity,
-                          ),
-                        );
+                    final lyricsHeight = ThreeLineLyrics.heightFor(context)
+                        .clamp(0.0, constraints.maxHeight * .32);
+                    final artworkSize =
+                        ((constraints.maxHeight - lyricsHeight) * 0.378)
+                            .clamp(108.0, 306.0)
+                            .clamp(
+                              0.0,
+                              (constraints.maxWidth - 40).clamp(
+                                0.0,
+                                double.infinity,
+                              ),
+                            );
                     return Center(
                       child: ConstrainedBox(
                         constraints: const BoxConstraints(maxWidth: 520),
@@ -147,6 +152,7 @@ class NowPlayingPage extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            SizedBox(height: lyricsHeight, child: lyrics),
                             Padding(
                               padding: const EdgeInsets.fromLTRB(8, 24, 8, 8),
                               child: Column(

@@ -6,9 +6,11 @@ class ScrollingTrackText extends StatefulWidget {
     super.key,
     required this.text,
     required this.style,
+    this.textAlign = TextAlign.start,
   });
   final String text;
   final TextStyle style;
+  final TextAlign textAlign;
 
   @override
   State<ScrollingTrackText> createState() => _ScrollingTrackTextState();
@@ -72,6 +74,7 @@ class _ScrollingTrackTextState extends State<ScrollingTrackText>
         maxLines: 1,
         softWrap: false,
         overflow: TextOverflow.ellipsis,
+        textAlign: widget.textAlign,
       );
       return Semantics(
         label: text,

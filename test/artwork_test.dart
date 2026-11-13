@@ -49,6 +49,72 @@ void main() {
     },
   );
 
+  for (final format in ['flac', 'm4a']) {
+    test(
+      'reads $format embedded lyrics through shared resource reader',
+      () async {
+        final resources = await readEmbeddedResources(
+          'test/fixtures/lyrics/embedded.$format',
+          MediaFiles(),
+        );
+        expect(resources.readSucceeded, true);
+        expect(resources.lyrics, '[00:01.00]Embedded sample');
+      },
+    );
+  }
+
+  test('reads millisecond SYLT embedded lyrics as synchronized text', () async {
+    List<int> integer(int n) => [
+      (n >> 24) & 255,
+      (n >> 16) & 255,
+      (n >> 8) & 255,
+      n & 255,
+    ];
+    final payload = [
+      3,
+      ...ascii.encode('eng'),
+      2,
+      1,
+      0,
+      ...utf8.encode('第一句'),
+      0,
+      ...integer(1000),
+      ...utf8.encode('第二句'),
+      0,
+      ...integer(2500),
+    ];
+    final frame = [
+      ...ascii.encode('SYLT'),
+      ...integer(payload.length),
+      0,
+      0,
+      ...payload,
+    ];
+    final size = frame.length;
+    final file = File('${directory.path}/synced.media');
+    await file.writeAsBytes([
+      73,
+      68,
+      51,
+      3,
+      0,
+      0,
+      (size >> 21) & 127,
+      (size >> 14) & 127,
+      (size >> 7) & 127,
+      size & 127,
+      ...frame,
+      255,
+      251,
+      144,
+      100,
+      ...List.filled(830, 0),
+    ]);
+    final resource = await readEmbeddedResources(file.path, MediaFiles());
+    expect(resource.lyrics, contains('[00:01.000]第一句'));
+    expect(resource.lyrics, contains('[00:02.500]第二句'));
+  });
+
   test(
     'reads embedded picture and lyrics from audio with a media extension',
     () async {

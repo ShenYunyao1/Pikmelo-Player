@@ -1,3 +1,7 @@
+import 'package:pikmelo_player/lyrics/lyrics_controller.dart';
+import 'package:pikmelo_player/lyrics/models/lyric_document.dart';
+import 'package:pikmelo_player/lyrics/ui/three_line_lyrics.dart';
+
 import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
@@ -38,7 +42,12 @@ void main() {
       }
       final uri = Uri.parse('https://offline-test.invalid');
       final size = await media.length();
-      final track = {'id': 'offline-track', 'title': '离线播放测试曲目', 'size': size};
+      final track = {
+        'id': 'offline-track',
+        'title': '离线播放测试曲目',
+        'size': size,
+        'lyrics': '[00:00]离线歌词第一句\n[00:00.8]离线歌词第二句\n[00:02]离线歌词第三句',
+      };
       final store = await LocalLibraryStore.open(databasePath: database);
       store.saveSelectedServer(uri);
       store.applySyncPages(uri, [
@@ -116,6 +125,7 @@ void main() {
           );
           await tester.pumpAndSettle();
           expect(find.text('正在播放'), findsOneWidget);
+          expect(find.byType(ThreeLineLyrics), findsOneWidget);
           if (launch == 0 && captureDirectory.isNotEmpty) {
             await _capture(captureKey, captureDirectory, 'player');
           }
@@ -128,6 +138,15 @@ void main() {
             tester,
             () => dependencies.playback.state.position.inMilliseconds >= 800,
           );
+          final lyrics = LyricsController(dependencies.playback);
+          try {
+            await _until(tester, () => !lyrics.loading);
+            expect(lyrics.document?.source, LyricsSource.server);
+            expect(lyrics.index, 1);
+            expect(lyrics.document?.cues[lyrics.index].text, '离线歌词第二句');
+          } finally {
+            lyrics.dispose();
+          }
           await dependencies.playback.next();
           await _until(
             tester,

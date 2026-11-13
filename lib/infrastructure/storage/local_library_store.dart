@@ -24,9 +24,15 @@ class LocalLibraryStore {
     return '${stat.size}|${stat.modified.microsecondsSinceEpoch}';
   }
 
-  Map<String, dynamic>? localMetadata(String path) {
+  String _lyricsKey(String path) =>
+      'local_lyrics_${sha256.convert(utf8.encode(path))}';
+  Map<String, dynamic>? localMetadata(String path) =>
+      _localResource(path, _metadataKey(path));
+  Map<String, dynamic>? localLyrics(String path) =>
+      _localResource(path, _lyricsKey(path));
+  Map<String, dynamic>? _localResource(String path, String key) {
     try {
-      final raw = setting(_metadataKey(path));
+      final raw = setting(key);
       if (raw == null) return null;
       final value = jsonDecode(raw) as Map;
       if (value['schema'] != 1) return null;
@@ -38,8 +44,12 @@ class LocalLibraryStore {
   }
 
   void saveLocalMetadata(String path, Map<String, dynamic> metadata) =>
+      _saveResource(path, _metadataKey(path), metadata);
+  void saveLocalLyrics(String path, String? text) =>
+      _saveResource(path, _lyricsKey(path), {'text': text});
+  void _saveResource(String path, String key, Map<String, dynamic> metadata) =>
       saveSetting(
-        _metadataKey(path),
+        key,
         jsonEncode({
           'schema': 1,
           'fingerprint': _metadataFingerprint(path),
@@ -613,8 +623,9 @@ class LocalLibraryStore {
     _database.execute('DELETE FROM pending_file_deletions WHERE path = ?', [
       path,
     ]);
-    _database.execute('DELETE FROM app_settings WHERE key = ?', [
+    _database.execute('DELETE FROM app_settings WHERE key IN (?, ?)', [
       _metadataKey(path),
+      _lyricsKey(path),
     ]);
   }
 

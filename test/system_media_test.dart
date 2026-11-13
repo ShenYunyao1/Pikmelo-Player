@@ -1,3 +1,5 @@
+import 'package:pikmelo_player/lyrics/ui/three_line_lyrics.dart';
+
 import 'dart:async';
 import 'dart:typed_data';
 
@@ -187,7 +189,7 @@ void main() {
       expect(844 - controls.bottom, closeTo(32, 0.1));
       expect(
         tester.getTopLeft(find.byType(PlaybackProgress)).dy -
-            tester.getBottomRight(find.byType(SingleChildScrollView)).dy,
+            tester.getBottomRight(find.byType(ThreeLineLyrics)).dy,
         24,
       );
       expect(

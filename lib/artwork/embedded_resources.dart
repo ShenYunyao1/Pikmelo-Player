@@ -7,9 +7,16 @@ import 'package:path_provider/path_provider.dart';
 
 import '../infrastructure/storage/media_files.dart';
 import 'audio_properties.dart';
+import 'synchronized_lyrics.dart';
 
 class EmbeddedResources {
-  const EmbeddedResources({this.cover, this.lyrics, this.metadata = const {}});
+  const EmbeddedResources({
+    this.cover,
+    this.lyrics,
+    this.metadata = const {},
+    this.readSucceeded = true,
+  });
+  final bool readSucceeded;
   final Uint8List? cover;
   final String? lyrics;
   final Map<String, dynamic> metadata;
@@ -36,7 +43,7 @@ Future<EmbeddedResources> readEmbeddedResources(
     }
     return await Isolate.run(() => parseEmbeddedResources(localPath));
   } catch (_) {
-    return const EmbeddedResources();
+    return const EmbeddedResources(readSucceeded: false);
   } finally {
     if (temporary != null) await temporary.delete(recursive: true);
   }
@@ -49,6 +56,12 @@ EmbeddedResources parseEmbeddedResources(String path) {
     properties = readAudioProperties(File(path));
   } catch (_) {
     /* Preserve readable tags. */
+  }
+  String? synchronized;
+  try {
+    synchronized = readSynchronizedLyrics(File(path));
+  } catch (_) {
+    /* Use readable text tags. */
   }
   final pictures = [...tags.pictures];
   pictures.sort(
@@ -64,7 +77,7 @@ EmbeddedResources parseEmbeddedResources(String path) {
       .firstOrNull;
   return EmbeddedResources(
     cover: picture?.bytes,
-    lyrics: tags.lyrics,
+    lyrics: synchronized ?? tags.lyrics,
     metadata: {
       'title': tags.title,
       'artist': tags.artist,
@@ -98,6 +111,13 @@ class EmbeddedResourceReader {
     );
     _tail = result.then<void>((_) {}, onError: (Object _, StackTrace _) {});
     _pending[key] = result;
+    void forgetFailure() {
+      if (identical(_pending[key], result)) _pending.remove(key);
+    }
+
+    result.then<void>((resource) {
+      if (!resource.readSucceeded) forgetFailure();
+    }, onError: (Object _, StackTrace _) => forgetFailure());
     return result;
   }
 }

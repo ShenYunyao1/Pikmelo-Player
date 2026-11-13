@@ -7,6 +7,7 @@ import 'models/playback_item.dart';
 import 'models/playback_state.dart';
 import 'playback_engine.dart';
 import '../library/models/track.dart';
+import '../lyrics/models/lyric_document.dart';
 
 class PlaybackController extends ChangeNotifier {
   PlaybackController({
@@ -23,6 +24,18 @@ class PlaybackController extends ChangeNotifier {
   VoidCallback? cancelPreparation;
   Future<Uint8List?> Function(PlaybackItem)? loadArtwork;
   int Function()? artworkRevision;
+  Future<LyricDocument?> Function(PlaybackItem)? loadLyrics;
+  int _seekRevision = 0;
+  int get seekRevision => _seekRevision;
+  int _lyricsRevision = 0;
+  int get lyricsRevision => _lyricsRevision;
+  void invalidateLyrics() {
+    if (!_disposed) {
+      _lyricsRevision++;
+      _notify();
+    }
+  }
+
   Future<Track?> Function(PlaybackItem)? loadMetadata;
   String? _systemError;
   String? get systemError => _systemError;
@@ -339,6 +352,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> seek(Duration position) {
+    _seekRevision++;
     final duration = _state.duration;
     final milliseconds = position.inMilliseconds.clamp(
       0,

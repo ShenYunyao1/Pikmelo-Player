@@ -17,6 +17,7 @@ class Track {
   String? get album => _text('album');
   String? get genre => _text('genre');
   String? get comment => _text('comment');
+  String? get lyrics => _text('lyrics');
   String? get format => _text('format');
   bool get parsedLocally => _json['_local_metadata'] == true;
   int? get bitrateKbps => _positiveInteger('bitrate_kbps');

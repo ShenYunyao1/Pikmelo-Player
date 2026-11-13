@@ -1,3 +1,5 @@
+import 'package:pikmelo_player/lyrics/models/lyric_document.dart';
+
 import 'dart:async';
 import 'dart:io';
 
@@ -47,6 +49,78 @@ void main() {
     controller.dispose();
     store.close();
   });
+
+  test(
+    'lyrics fallback shares a read-only snapshot and keeps downloads attached',
+    () async {
+      controller.dispose();
+      final player = PlaybackController(
+        createEngine: () => _ProgressEngine(),
+        isAvailable: (_) => true,
+      );
+      controller = ConnectionController(
+        networkReader: () async => {'connected': true, 'cellular': false},
+        keyStore: keys,
+        openStore: () async => store,
+        createClient: (_, _) => client,
+        playback: player,
+      );
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      final downloads = controller.downloads;
+      final item = PlaybackItem(
+        serverUri: controller.serverUri,
+        track: Track.fromJson(store.tracks(controller.serverUri).first),
+        path: '',
+      );
+      client.trackFields['lyrics'] = '[00:01]server fallback';
+      final docs = await Future.wait([
+        player.loadLyrics!(item),
+        player.loadLyrics!(item),
+      ]);
+      expect(docs.first!.source, LyricsSource.server);
+      expect(docs.last!.plainText, 'server fallback');
+      expect(client.syncCalls, 2);
+      expect(identical(controller.downloads, downloads), true);
+
+      controller.dispose();
+      await controller.downloadShutdown;
+      final directory = await Directory.systemTemp.createTemp(
+        'pikmelo-lyrics-restart-',
+      );
+      final file = await File('${directory.path}/track.media')
+          .writeAsString('audio');
+      store.saveOfflineMedia(
+        serverUri: item.serverUri,
+        expectedGeneration: store.generationFor(item.serverUri),
+        trackId: item.track.id,
+        track: item.track.toJson(),
+        file: file,
+      );
+      store.saveLocalMetadata(file.path, {
+        'title': 'Local title',
+        'album': 'Local album',
+      });
+      controller = ConnectionController(
+        networkReader: () async => {'connected': false, 'cellular': false},
+        keyStore: keys,
+        openStore: () async => store,
+        createClient: (_, _) => client,
+        playback: player,
+      );
+      try {
+        await controller.initialize();
+        expect((await player.loadLyrics!(item))!.plainText, 'server fallback');
+        expect(client.syncCalls, 2);
+      } finally {
+        controller.dispose();
+        await controller.downloadShutdown;
+        await directory.delete(recursive: true);
+      }
+      player.dispose();
+      await player.shutdown();
+    },
+  );
 
   test(
     'single-track progress does not repeatedly scan and notify cache storage',
