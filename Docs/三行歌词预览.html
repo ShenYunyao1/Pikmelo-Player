@@ -1,0 +1,529 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Pikmelo Player 三行歌词预览</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #101b18;
+        --mint: #92dfc0;
+        --text: #f4f2ea;
+        --muted: #9aaea3;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: #0b1210;
+        color: var(--text);
+        font-family: "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+      }
+      main {
+        max-width: 940px;
+        margin: 28px auto;
+        display: grid;
+        grid-template-columns: 390px 1fr;
+        gap: 48px;
+        padding: 0 24px;
+        align-items: center;
+      }
+      .phone {
+        height: 810px;
+        background: var(--bg);
+        border: 1px solid #2d3c35;
+        border-radius: 28px;
+        padding: 12px 16px 10px;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 24px 70px #0005;
+        overflow: hidden;
+      }
+      header {
+        height: 48px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 4px;
+        font-size: 18px;
+      }
+      header strong {
+        font-size: 17px;
+        font-weight: 500;
+      }
+      header span {
+        font-size: 27px;
+      }
+      .upper {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 18px 8px 12px;
+        scrollbar-width: thin;
+      }
+      .cover {
+        width: min(100%, 240px);
+        aspect-ratio: 1;
+        margin: 0 auto 22px;
+        border-radius: 16px;
+        background-image: url("界面设计V1.png");
+        background-size: 604.14% 309.31%;
+        background-position: 96.1% 30.31%;
+      }
+      .song {
+        font-size: 24px;
+        font-weight: 600;
+        line-height: 32px;
+        margin: 0 0 5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .artist,
+      .album {
+        margin: 0;
+        line-height: 24px;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .album {
+        font-size: 13px;
+        line-height: 22px;
+      }
+      .lyrics {
+        position: relative;
+        height: 120px;
+        flex-shrink: 0;
+        margin: 12px 8px 20px;
+        overflow: hidden;
+        isolation: isolate;
+        mask-image: linear-gradient(
+          transparent,
+          #000 9%,
+          #000 91%,
+          transparent
+        );
+      }
+      .line {
+        position: absolute;
+        top: 50%;
+        left: 0;
+        right: 0;
+        height: 32px;
+        line-height: 32px;
+        text-align: center;
+        font-size: 20px;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        transform-origin: center;
+        will-change: transform, opacity;
+        transition:
+          transform 260ms cubic-bezier(0.2, 0.7, 0.3, 1),
+          opacity 260ms ease,
+          color 260ms ease;
+        color: var(--muted);
+      }
+      .line.current {
+        color: var(--mint);
+        font-weight: 600;
+      }
+      .snap .line,
+      .reduced .line {
+        transition: none !important;
+      }
+      .lyrics.empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .lyrics.plain {
+        mask-image: none;
+        overflow: auto;
+        color: var(--muted);
+        font-size: 15px;
+        line-height: 28px;
+        text-align: center;
+        white-space: pre-line;
+      }
+      .plain-label {
+        position: sticky;
+        top: 0;
+        background: var(--bg);
+        font-size: 12px;
+        color: var(--mint);
+        padding-bottom: 6px;
+      }
+      footer {
+        flex-shrink: 0;
+        padding: 0 0 4px;
+      }
+      .progress {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 11px;
+        color: var(--muted);
+        height: 34px;
+      }
+      .progress input {
+        flex: 1;
+        min-width: 0;
+        accent-color: var(--mint);
+        height: 3px;
+        cursor: pointer;
+      }
+      .bitrate {
+        font-size: 11px;
+        color: var(--muted);
+        margin: 2px 0 13px;
+      }
+      .controls {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr) 64px repeat(3, 1fr);
+        align-items: center;
+        height: 64px;
+        text-align: center;
+        color: var(--text);
+        font-size: 21px;
+      }
+      .play {
+        border: 0;
+        background: var(--mint);
+        color: #10382a;
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        font-size: 27px;
+        cursor: pointer;
+      }
+      .play:hover {
+        filter: brightness(1.08);
+      }
+      .controls span {
+        opacity: 0.9;
+      }
+      .gesture {
+        height: 4px;
+        width: 110px;
+        border-radius: 3px;
+        background: #b9c7c0;
+        margin: 18px auto 0;
+        opacity: 0.6;
+      }
+      aside h1 {
+        font-size: 26px;
+        line-height: 1.4;
+        margin: 0 0 18px;
+        font-weight: 500;
+      }
+      aside p {
+        font-size: 14px;
+        line-height: 1.9;
+        color: var(--muted);
+        margin: 0 0 24px;
+      }
+      aside label {
+        display: block;
+        margin: 18px 0;
+        color: var(--text);
+        font-size: 14px;
+      }
+      select {
+        display: block;
+        width: 100%;
+        border: 1px solid #42574c;
+        border-radius: 9px;
+        background: #1b2924;
+        padding: 10px;
+        margin-top: 9px;
+        color: var(--text);
+        font: inherit;
+      }
+      .check {
+        display: flex;
+        gap: 9px;
+        align-items: center;
+      }
+      input[type="checkbox"] {
+        accent-color: var(--mint);
+      }
+      .legend {
+        display: grid;
+        gap: 14px;
+        margin-top: 30px;
+        font-size: 14px;
+        color: var(--muted);
+      }
+      .legend span:nth-child(2) {
+        color: var(--mint);
+      }
+      @media (max-width: 720px) {
+        main {
+          display: flex;
+          flex-direction: column;
+          gap: 24px;
+          margin: 18px auto;
+          padding: 0 14px;
+        }
+        .phone {
+          width: min(100%, 390px);
+          height: 800px;
+        }
+        aside {
+          max-width: 390px;
+          padding: 0 8px;
+        }
+        aside h1 {
+          font-size: 22px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .line {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="phone" aria-label="正在播放页面布局示意">
+        <header>
+          <span aria-hidden="true">⌄</span><strong>正在播放</strong
+          ><span aria-hidden="true">⋮</span>
+        </header>
+        <div class="upper">
+          <div
+            class="cover"
+            role="img"
+            aria-label="现有设计中的森林湖泊封面"
+          ></div>
+          <p class="song">归途练习</p>
+          <p class="artist">示意歌手</p>
+          <p class="album">夜色手记</p>
+        </div>
+        <div
+          id="lyrics"
+          class="lyrics"
+          aria-live="polite"
+          aria-atomic="true"
+        ></div>
+        <footer>
+          <div class="progress">
+            <span id="elapsed">0:08</span
+            ><input
+              id="seek"
+              type="range"
+              min="0"
+              max="40"
+              step="0.05"
+              value="8.8"
+              aria-label="模拟播放进度"
+            /><span>0:40</span>
+          </div>
+          <div class="bitrate">320 kbps</div>
+          <div class="controls">
+            <span aria-hidden="true">♬</span><span aria-hidden="true">↻</span
+            ><span aria-hidden="true">⏮</span
+            ><button class="play" id="play" aria-label="播放预览">▶</button
+            ><span aria-hidden="true">⏭</span><span aria-hidden="true">≡</span
+            ><span></span>
+          </div>
+          <div class="gesture" aria-hidden="true"></div>
+        </footer>
+      </section>
+      <aside>
+        <h1>三行歌词 · V1</h1>
+        <p>
+          点击播放或拖动进度条，查看上一句淡出、当前句高亮、下一句淡入的过渡。交互预览使用原创示例歌词，播放按钮和进度条用于演示。
+        </p>
+        <label
+          >预览状态<select id="mode">
+            <option value="synced">同步歌词</option>
+            <option value="plain">纯文本歌词</option>
+            <option value="loading">读取中</option>
+            <option value="empty">暂无歌词</option>
+          </select></label
+        ><label class="check"
+          ><input id="reduced" type="checkbox" />减少动画</label
+        >
+        <div class="legend">
+          <span>上一句 · 降低透明度并向上退出</span
+          ><span>当前句 · 薄荷绿高亮</span><span>下一句 · 从底部进入</span>
+        </div>
+      </aside>
+    </main>
+    <script>
+      const cues = [
+        { time: 0, text: "沿着晚风经过的街巷" },
+        { time: 4, text: "把匆忙留在路的另一旁" },
+        { time: 8, text: "灯光陪着归途慢慢亮" },
+        { time: 12, text: "把未说完的话留给明天" },
+        { time: 16, text: "一扇窗接住远处的星光" },
+        { time: 20, text: "我听见城市轻轻地呼吸" },
+        { time: 24, text: "所有相逢都落在这晚上" },
+        { time: 28, text: "而你正走向温柔的远方" },
+        { time: 32, text: "让这一段旋律陪你回家" },
+      ];
+      const view = document.getElementById("lyrics");
+      const seek = document.getElementById("seek");
+      const play = document.getElementById("play");
+      const mode = document.getElementById("mode");
+      const elapsed = document.getElementById("elapsed");
+      const reduced = document.getElementById("reduced");
+      let running = false,
+        position = 8.8,
+        lastFrame = 0,
+        current = -2,
+        frameId = 0;
+      const nodes = new Map();
+      function indexAt(value) {
+        let found = -1;
+        for (let i = 0; i < cues.length; i++) {
+          if (cues[i].time <= value) found = i;
+          else break;
+        }
+        return found;
+      }
+      function reset() {
+        for (const node of nodes.values()) node.remove();
+        nodes.clear();
+        current = -2;
+      }
+      function render(snap = false) {
+        if (mode.value !== "synced") return;
+        const index = indexAt(position);
+        if (index === current && !snap) return;
+        current = index;
+        view.className =
+          "lyrics" +
+          (snap ? " snap" : "") +
+          (reduced.checked ? " reduced" : "");
+        const active = new Set();
+        for (
+          let i = Math.max(0, index - 2);
+          i <= Math.min(cues.length - 1, index + 2);
+          i++
+        ) {
+          active.add(i);
+          let node = nodes.get(i);
+          if (!node) {
+            node = document.createElement("div");
+            node.className = "line";
+            node.textContent = cues[i].text;
+            node.setAttribute("aria-hidden", "true");
+            node.style.transform = "translateY(56px) scale(.9)";
+            node.style.opacity = "0";
+            view.appendChild(node);
+            nodes.set(i, node);
+            node.getBoundingClientRect();
+          }
+          const slot = i - index;
+          node.className = "line" + (slot === 0 ? " current" : "");
+          node.style.transform = `translateY(${slot * 36 - 16}px) scale(${slot === 0 ? 1 : 0.9})`;
+          node.style.opacity =
+            Math.abs(slot) > 1
+              ? "0"
+              : slot === 0
+                ? "1"
+                : slot < 0
+                  ? ".3"
+                  : ".5";
+        }
+        for (const [i, node] of nodes) {
+          if (!active.has(i)) {
+            node.remove();
+            nodes.delete(i);
+          }
+        }
+        view.setAttribute("aria-label", index >= 0 ? cues[index].text : "前奏");
+        if (snap) requestAnimationFrame(() => view.classList.remove("snap"));
+      }
+      function stateChanged() {
+        reset();
+        view.innerHTML = "";
+        view.removeAttribute("aria-label");
+        if (mode.value === "synced") {
+          render(true);
+        } else if (mode.value === "plain") {
+          view.className = "lyrics plain";
+          const label = document.createElement("div");
+          label.className = "plain-label";
+          label.textContent = "未同步歌词";
+          view.appendChild(label);
+          view.appendChild(
+            document.createTextNode(cues.map((x) => x.text).join("\n")),
+          );
+        } else {
+          view.className = "lyrics empty";
+          view.textContent =
+            mode.value === "loading" ? "正在读取歌词…" : "暂无歌词";
+        }
+      }
+      function timeText(value) {
+        return (
+          Math.floor(value / 60) +
+          ":" +
+          String(Math.floor(value % 60)).padStart(2, "0")
+        );
+      }
+      function updateTime() {
+        seek.value = position;
+        elapsed.textContent = timeText(position);
+      }
+      function stop() {
+        running = false;
+        play.textContent = "▶";
+        play.setAttribute("aria-label", "播放预览");
+        cancelAnimationFrame(frameId);
+        lastFrame = 0;
+      }
+      function tick(stamp) {
+        if (!running) return;
+        if (lastFrame)
+          position = Math.min(40, position + (stamp - lastFrame) / 1000);
+        lastFrame = stamp;
+        updateTime();
+        render();
+        if (position >= 40) {
+          stop();
+          return;
+        }
+        frameId = requestAnimationFrame(tick);
+      }
+      play.addEventListener("click", () => {
+        if (running) {
+          stop();
+          return;
+        }
+        if (position >= 40) {
+          position = 0;
+          render(true);
+        }
+        running = true;
+        play.textContent = "Ⅱ";
+        play.setAttribute("aria-label", "暂停预览");
+        lastFrame = 0;
+        frameId = requestAnimationFrame(tick);
+      });
+      seek.addEventListener("input", () => {
+        position = Number(seek.value);
+        lastFrame = 0;
+        updateTime();
+        render(true);
+      });
+      mode.addEventListener("change", stateChanged);
+      reduced.addEventListener("change", () => {
+        if (mode.value === "synced") render(true);
+      });
+      updateTime();
+      stateChanged();
+    </script>
+  </body>
+</html>
