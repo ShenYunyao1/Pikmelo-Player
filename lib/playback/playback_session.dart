@@ -17,6 +17,7 @@ class PlaybackSession {
     this.restoreQueue = true,
   }) {
     _restore();
+    _savedPreferences = store.setting('playback_preferences');
     player.addListener(_save);
   }
   final LocalLibraryStore store;
@@ -26,6 +27,8 @@ class PlaybackSession {
   final bool restoreQueue;
   String get _key => 'playback_session_${sha256.convert(utf8.encode(scope))}';
   bool get enabled => store.setting('restore_playback_session') != 'false';
+  Object? _inputs;
+  String? _savedPreferences;
   String? _structure;
   int _position = -2000;
   bool? _playing;
@@ -99,6 +102,22 @@ class PlaybackSession {
 
   void _save({bool force = false}) {
     try {
+      final position = player.state.position.inMilliseconds;
+      final inputs = (
+        player.queue,
+        player.currentIndex,
+        player.mode,
+        player.defaultMode,
+        player.volume,
+        player.stopped,
+      );
+      if (!force &&
+          inputs == _inputs &&
+          _playing == player.playRequested &&
+          (position - _position).abs() < 2000) {
+        return;
+      }
+      _inputs = inputs;
       final preferences = jsonEncode({
         'mode': player.mode.name,
         'default_mode': player.defaultMode.name,
@@ -114,14 +133,16 @@ class PlaybackSession {
         'preferences': preferences,
         'stopped': player.stopped,
       });
-      final position = player.state.position.inMilliseconds;
       if (!force &&
           structure == _structure &&
           _playing == player.playRequested &&
           (position - _position).abs() < 2000) {
         return;
       }
-      store.saveSetting('playback_preferences', preferences);
+      if (preferences != _savedPreferences) {
+        store.saveSetting('playback_preferences', preferences);
+        _savedPreferences = preferences;
+      }
       if (enabled && restoreQueue) {
         store.saveSetting(
           _key,

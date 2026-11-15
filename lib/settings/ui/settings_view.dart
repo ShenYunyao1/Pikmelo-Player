@@ -1,3 +1,5 @@
+import '../../shared/diagnostics.dart';
+
 import 'package:flutter/material.dart';
 
 import '../connection_controller.dart';
@@ -42,10 +44,10 @@ class _SettingsViewState extends State<SettingsView> {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: Listenable.merge([
       widget.controller,
-      widget.controller.playback,
-      widget.controller.updates,
+      widget.controller.playback?.presentationChanges,
     ]),
     builder: (context, _) {
+      Diagnostics.event('ui.settings.build');
       final controller = widget.controller;
       final storage = controller.mediaStorage;
       final player = controller.playback;
@@ -107,23 +109,33 @@ class _SettingsViewState extends State<SettingsView> {
                   _Section.about => Icons.info_outline,
                 }),
                 title: Text(_labels[section]!),
-                subtitle: Text(switch (section) {
-                  _Section.server =>
-                    '${controller.serverUri.host} · ${controller.connected ? '已连接' : '未连接'}',
-                  _Section.downloads =>
-                    storage == null
-                        ? '媒体目录、移动网络与缓存'
-                        : '${mobileDownloadLabel(storage.mobilePolicy)} · ${storage.cacheLimit ~/ (1024 * 1024)} MB',
-                  _Section.playback =>
-                    player == null
-                        ? '队列恢复与默认播放模式'
-                        : '${controller.restorePlaybackEnabled ? '恢复队列' : '不恢复队列'} · ${playbackModeLabel(player.defaultMode)}',
-                  _Section.logs => '20 MB 循环 · ${AppLog.instance.level.name}',
-                  _Section.about =>
-                    updates?.release != null
-                        ? '发现新版本 ${updates!.release!.version}'
-                        : '当前版本 ${updates?.currentVersion ?? '信息暂不可用'}',
-                }),
+                subtitle: section == _Section.about && updates != null
+                    ? ListenableBuilder(
+                        listenable: updates,
+                        builder: (context, _) => Text(
+                          updates.release != null
+                              ? '发现新版本 ${updates.release!.version}'
+                              : '当前版本 ${updates.currentVersion}',
+                        ),
+                      )
+                    : Text(switch (section) {
+                        _Section.server =>
+                          '${controller.serverUri.host} · ${controller.connected ? '已连接' : '未连接'}',
+                        _Section.downloads =>
+                          storage == null
+                              ? '媒体目录、移动网络与缓存'
+                              : '${mobileDownloadLabel(storage.mobilePolicy)} · ${storage.cacheLimit ~/ (1024 * 1024)} MB',
+                        _Section.playback =>
+                          player == null
+                              ? '队列恢复与默认播放模式'
+                              : '${controller.restorePlaybackEnabled ? '恢复队列' : '不恢复队列'} · ${playbackModeLabel(player.defaultMode)}',
+                        _Section.logs =>
+                          '20 MB 循环 · ${AppLog.instance.level.name}',
+                        _Section.about =>
+                          updates?.release != null
+                              ? '发现新版本 ${updates!.release!.version}'
+                              : '当前版本 ${updates?.currentVersion ?? '信息暂不可用'}',
+                      }),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () {
                   AppLog.instance.debug('navigation.settings', {

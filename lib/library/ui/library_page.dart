@@ -1,3 +1,5 @@
+import '../../shared/diagnostics.dart';
+
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -107,6 +109,7 @@ class _LibraryPageState extends State<LibraryPage> {
     listenable: widget.controller,
     builder: (context, _) => LayoutBuilder(
       builder: (context, constraints) {
+        Diagnostics.event('ui.library.build');
         final desktop = constraints.maxWidth >= 840;
         final player = widget.controller.playback;
         final title = ['曲库', '下载', '设置'][_destination];

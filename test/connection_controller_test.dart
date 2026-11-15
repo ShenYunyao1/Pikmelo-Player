@@ -1,3 +1,4 @@
+import 'package:pikmelo_player/settings/ui/settings_view.dart';
 import 'package:pikmelo_player/shared/app_log.dart';
 import 'package:pikmelo_player/settings/media_storage_controller.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
@@ -51,6 +52,129 @@ void main() {
   tearDown(() {
     controller.dispose();
     store.close();
+  });
+
+  testWidgets(
+    'settings text stays built during position-only playback events',
+    (tester) async {
+      final engine = _ProgressEngine();
+      final player = (await tester.runAsync(
+        () async => PlaybackController(
+          createEngine: () => engine,
+          isAvailable: (_) => true,
+        ),
+      ))!;
+      controller.dispose();
+      controller = ConnectionController(
+        keyStore: keys,
+        openStore: () async => store,
+        createClient: (_, _) => client,
+        playback: player,
+      );
+      player.resolveSource = null;
+      final serverText = TextEditingController();
+      final keyText = TextEditingController();
+      try {
+        await tester.runAsync(
+          () => player.playQueue([
+            PlaybackItem(
+              serverUri: Uri.parse('https://example.com'),
+              track: Track.fromJson({'id': 'one', 'title': 'Song'}),
+              path: '/fixture',
+            ),
+          ]),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: SettingsView(
+                controller: controller,
+                serverController: serverText,
+                keyController: keyText,
+                onConnect: () {},
+                onDownloads: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final previous = debugOnRebuildDirtyWidget;
+        var builds = 0;
+        debugOnRebuildDirtyWidget = (element, builtOnce) {
+          previous?.call(element, builtOnce);
+          if (element.widget is Text) builds++;
+        };
+        try {
+          for (var second = 1; second <= 5; second++) {
+            engine._emit(
+              engine._state.copyWith(position: Duration(seconds: second)),
+            );
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          expect(builds, 0);
+          await tester.tap(find.text('播放行为'));
+          await tester.pumpAndSettle();
+          builds = 0;
+          for (var second = 6; second <= 10; second++) {
+            engine._emit(
+              engine._state.copyWith(position: Duration(seconds: second)),
+            );
+            await tester.pump(const Duration(milliseconds: 16));
+          }
+          expect(builds, 0);
+          player.setDefaultMode(PlaybackMode.repeatOne);
+        } finally {
+          debugOnRebuildDirtyWidget = previous;
+        }
+      } finally {
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.runAsync(() async {
+          controller.dispose();
+          await controller.downloadShutdown;
+          await player.shutdown();
+        });
+        serverText.dispose();
+        keyText.dispose();
+      }
+    },
+  );
+
+  test('single-track download and resource operations do not decode unrelated rows', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pikmelo-point-read-',
+    );
+    final path = '${directory.path}/library.sqlite';
+    final local = await LocalLibraryStore.open(databasePath: path);
+    controller.dispose();
+    controller = ConnectionController(
+      keyStore: keys,
+      openStore: () async => local,
+      createClient: (_, _) => client,
+      networkReader: () async => {'connected': false, 'cellular': false},
+    );
+    client.health.complete({'version': 'test'});
+    await controller.connectAndSync('https://example.com', 'test-key');
+    final raw = sql.sqlite3.open(path);
+    try {
+      final server = raw
+          .select('SELECT server_key FROM tracks')
+          .first['server_key'];
+      raw.execute('INSERT INTO tracks(server_key,id,data) VALUES(?,?,?)', [
+        server,
+        'unrelated',
+        '{broken',
+      ]);
+      expect((await controller.metadataFor('track-1'))?.id, 'track-1');
+      controller.enqueueDownload('track-1');
+      expect(controller.downloads!.tasks.single.track.id, 'track-1');
+      expect(await controller.artworkFor('track-1'), isNull);
+    } finally {
+      controller.dispose();
+      await controller.downloadShutdown;
+      raw.close();
+      local.close();
+      await directory.delete(recursive: true);
+    }
   });
 
   test('playback authorization reads only the selected record and observes revocation immediately', () async {

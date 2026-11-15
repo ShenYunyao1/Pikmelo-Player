@@ -16,7 +16,10 @@ class PlaybackSettings extends StatelessWidget {
   final ConnectionController controller;
   @override
   Widget build(BuildContext context) => ListenableBuilder(
-    listenable: Listenable.merge([controller, controller.playback]),
+    listenable: Listenable.merge([
+      controller,
+      controller.playback?.presentationChanges,
+    ]),
     builder: (context, _) => ListView(
       children: [
         if (controller.playback case final player?) ...[

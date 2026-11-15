@@ -1,3 +1,5 @@
+import 'package:sqlite3/sqlite3.dart' as sql;
+
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -52,6 +54,52 @@ void main() {
     store.close();
     await directory.delete(recursive: true);
   });
+
+  test(
+    'position snapshots avoid rewriting unchanged playback preferences',
+    () async {
+      final raw = sql.sqlite3.open('${directory.path}/library.sqlite');
+      raw.execute('CREATE TABLE preference_writes (value TEXT)');
+      raw.execute(
+        "CREATE TRIGGER record_preferences AFTER INSERT ON app_settings WHEN NEW.key = 'playback_preferences' BEGIN INSERT INTO preference_writes VALUES (NEW.value); END",
+      );
+      final current = player();
+      final session = PlaybackSession(
+        store: store,
+        player: current,
+        scope: 'key',
+        serverUri: uri,
+      );
+      try {
+        current.restoreQueue(items());
+        final baseline =
+            raw
+                    .select('SELECT COUNT(*) AS count FROM preference_writes')
+                    .first['count']
+                as int;
+        for (var second = 1; second <= 8; second++) {
+          await current.seek(Duration(seconds: second));
+        }
+        expect(
+          raw
+              .select('SELECT COUNT(*) AS count FROM preference_writes')
+              .first['count'],
+          baseline,
+        );
+        current.setMode(PlaybackMode.repeatAll);
+        expect(
+          raw
+              .select('SELECT COUNT(*) AS count FROM preference_writes')
+              .first['count'],
+          baseline + 1,
+        );
+      } finally {
+        session.dispose();
+        await current.shutdown();
+        raw.close();
+      }
+    },
+  );
 
   test(
     'legacy mode initializes default and snapshots retain their own mode',

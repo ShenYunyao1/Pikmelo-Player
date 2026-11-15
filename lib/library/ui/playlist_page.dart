@@ -1,3 +1,5 @@
+import '../../shared/diagnostics.dart';
+
 import 'package:flutter/material.dart';
 
 import '../../downloads/ui/downloads_page.dart';
@@ -26,6 +28,7 @@ class PlaylistPage extends StatelessWidget {
   Widget build(BuildContext context) => ListenableBuilder(
     listenable: controller,
     builder: (context, _) {
+      Diagnostics.event('ui.playlist.build');
       final sameServer =
           ServerConnection.serverKey(controller.serverUri) == serverKey;
       final matches = controller.playlists.where(

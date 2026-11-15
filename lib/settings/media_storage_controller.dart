@@ -342,7 +342,7 @@ class MediaStorageController extends ChangeNotifier {
       bytes -= _size(row);
       removed.add((server: server, id: id));
     }
-    _notify();
+    if (removed.isNotEmpty) _notify();
     return removed;
   }
 

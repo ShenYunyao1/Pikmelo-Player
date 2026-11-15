@@ -102,8 +102,9 @@ class ConnectionController extends ChangeNotifier {
 
   void _loadLocalMetadata(
     LocalLibraryStore store,
-    ServerConnection connection,
-  ) {
+    ServerConnection connection, {
+    Iterable<String>? trackIds,
+  }) {
     if (_metadataWork != null) {
       _metadataAgain = true;
       return;
@@ -113,11 +114,17 @@ class ConnectionController extends ChangeNotifier {
         () async {
           do {
             _metadataAgain = false;
-            final rows = store.offlineTracks(serverUri: connection.uri);
-            for (final row in rows) {
+            final ids =
+                trackIds?.toList() ??
+                store
+                    .offlineTracks(serverUri: connection.uri)
+                    .map((row) => row['track_id'] as String)
+                    .toList();
+            trackIds = null;
+            for (var index = 0; index < ids.length; index++) {
               if (_disposed || scope != _scope) return;
-              final id = row['track_id'] as String;
-              await metadataFor(id);
+              await metadataFor(ids[index]);
+              if (index % 32 == 31) await Future<void>.delayed(Duration.zero);
             }
           } while (_metadataAgain && !_disposed && scope == _scope);
         }().catchError((Object _, StackTrace _) {}).whenComplete(() {
@@ -160,7 +167,8 @@ class ConnectionController extends ChangeNotifier {
       }
       if (resource.readSucceeded) store.saveLocalLyrics(path, resource.lyrics);
       store.saveLocalMetadata(path, metadata);
-      playback?.updateMetadata(serverUri, library.tracks(serverUri));
+      final updated = library.track(serverUri, id);
+      if (updated != null) playback?.updateMetadata(serverUri, [updated]);
       notifyListeners();
     }
     return library.track(serverUri, id);
@@ -179,27 +187,19 @@ class ConnectionController extends ChangeNotifier {
         item.serverUri != serverUri) {
       return Future.value();
     }
-    final track = storage.store
-        .tracks(serverUri)
-        .map(Track.fromJson)
-        .where(
-          (track) =>
-              track.id == item.track.id && !track.removed && !track.missing,
-        )
-        .firstOrNull;
-    if (track == null) return Future.value();
+    final data = storage.store.track(serverUri, item.track.id);
+    final track = data == null ? null : Track.fromJson(data);
+    if (track == null || track.missing || track.removed) return Future.value();
     final path = library.offlineSource(serverUri, track.id);
-    bool allowed() =>
-        !_disposed &&
-        _scope == scope &&
-        _library != null &&
-        _library!.offlineSource(serverUri, track.id) == path &&
-        _library!
-            .tracks(serverUri)
-            .any(
-              (track) =>
-                  track.id == item.track.id && !track.removed && !track.missing,
-            );
+    bool allowed() {
+      if (_disposed || _scope != scope || _library == null) return false;
+      final current = _library!.track(serverUri, track.id);
+      return current != null &&
+          !current.removed &&
+          !current.missing &&
+          _library!.offlineSource(serverUri, track.id) == path;
+    }
+
     return _lyrics.load(
       scope: scope,
       track: track,
@@ -299,14 +299,11 @@ class ConnectionController extends ChangeNotifier {
       coverId: track.coverId,
       files: storage.store.files,
       retryToken: '${storage.networkRevision}',
-      allowed: () =>
-          !_disposed &&
-          _scope == scope &&
-          _library!
-              .tracks(serverUri)
-              .any(
-                (track) => track.id == id && !track.missing && !track.removed,
-              ),
+      allowed: () {
+        if (_disposed || _scope != scope || _library == null) return false;
+        final current = _library!.track(serverUri, id);
+        return current != null && !current.missing && !current.removed;
+      },
       fetchCover: (id) => _fetchArtwork(id, scope, key),
     );
   }
@@ -444,18 +441,18 @@ class ConnectionController extends ChangeNotifier {
 
   void enqueueDownload(String id) {
     if (_disposed || _busy || _library == null || _downloads == null) return;
-    final tracks = _library!.tracks(serverUri).where((track) => track.id == id);
-    if (tracks.isNotEmpty) _downloads!.enqueue(tracks.first);
+    final track = _library!.track(serverUri, id);
+    if (track != null) _downloads!.enqueue(track);
   }
 
   void appendToQueue(String id) {
     if (_disposed || _busy || playback == null || _library == null) return;
-    final tracks = _library!.tracks(serverUri).where((track) => track.id == id);
-    if (tracks.isEmpty || tracks.first.missing || tracks.first.removed) return;
+    final track = _library!.track(serverUri, id);
+    if (track == null || track.missing || track.removed) return;
     playback!.append(
       PlaybackItem(
         serverUri: serverUri,
-        track: tracks.first,
+        track: track,
         path: _library!.offlineSource(serverUri, id) ?? '',
       ),
     );
@@ -493,12 +490,12 @@ class ConnectionController extends ChangeNotifier {
       return Future.value();
     }
     final path = _library!.offlineSource(serverUri, id);
-    final tracks = _library!.tracks(serverUri).where((track) => track.id == id);
-    if (tracks.isEmpty || tracks.first.missing || tracks.first.removed) {
+    final track = _library!.track(serverUri, id);
+    if (track == null || track.missing || track.removed) {
       return Future.value();
     }
     return playback!.playQueue([
-      PlaybackItem(serverUri: serverUri, track: tracks.first, path: path ?? ''),
+      PlaybackItem(serverUri: serverUri, track: track, path: path ?? ''),
     ]);
   }
 
@@ -860,10 +857,11 @@ class ConnectionController extends ChangeNotifier {
           if (task.status == DownloadStatus.completed) task.track.id,
       };
       if (setEquals(completed, _completedDownloads)) return;
+      final added = completed.difference(_completedDownloads);
       _completedDownloads = completed;
       final storage = mediaStorage;
-      if (storage != null && _library != null) {
-        _loadLocalMetadata(storage.store, _connection);
+      if (storage != null && _library != null && added.isNotEmpty) {
+        _loadLocalMetadata(storage.store, _connection, trackIds: added);
       }
       final item = playback?.current;
       if (item != null) {
@@ -914,15 +912,12 @@ class ConnectionController extends ChangeNotifier {
       throw const PlaybackPreparationException('曲库连接已更新，请重新选择曲目。');
     }
     try {
-      final metadata = _library!
-          .tracks(item.serverUri)
-          .where(
-            (track) =>
-                track.id == item.track.id && !track.missing && !track.removed,
-          );
-      if (metadata.isEmpty) throw StateError('曲目授权已更新，请重新同步曲库。');
+      final metadata = _library!.track(item.serverUri, item.track.id);
+      if (metadata == null || metadata.missing || metadata.removed) {
+        throw StateError('曲目授权已更新，请重新同步曲库。');
+      }
       final path = await manager.ensureReady(
-        metadata.first,
+        metadata,
         purpose: DownloadPurpose.playback,
       );
       if (_disposed || !identical(manager, _downloads)) {

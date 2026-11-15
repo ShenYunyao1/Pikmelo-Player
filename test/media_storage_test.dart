@@ -33,6 +33,16 @@ void main() {
     await root.delete(recursive: true);
   });
 
+  test(
+    'cache cleanup within budget does not notify storage listeners',
+    () async {
+      var notifications = 0;
+      storage.addListener(() => notifications++);
+      expect(await storage.trimCache({}), isEmpty);
+      expect(notifications, 0);
+    },
+  );
+
   Future<File> media(String id, {int size = 10, bool pinned = true}) async {
     final file = File('${root.path}/$id.media');
     await file.writeAsBytes(List.filled(10, 7));
