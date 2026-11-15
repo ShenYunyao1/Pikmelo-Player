@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../library/ui/library_page.dart';
 import '../settings/connection_controller.dart';
 import 'app_dependencies.dart';
+import '../shared/app_log.dart';
 
 class PikmeloPlayerApp extends StatefulWidget {
   const PikmeloPlayerApp({super.key, this.dependencies});
@@ -34,7 +35,13 @@ class _PikmeloPlayerAppState extends State<PikmeloPlayerApp>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_connection.refresh());
+    AppLog.instance.debug('app.lifecycle', {'state': state.name});
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_connection.refreshOnForeground());
+    } else {
+      _connection.leaveForeground();
+      unawaited(AppLog.instance.flush());
+    }
   }
 
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {

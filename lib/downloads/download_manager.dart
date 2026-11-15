@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import '../shared/app_log.dart';
 import '../infrastructure/server/pikmelo_api_client.dart';
 import '../infrastructure/storage/local_library_store.dart';
 import '../library/models/track.dart';
@@ -184,6 +185,7 @@ class DownloadManager extends ChangeNotifier {
   }
 
   void resume(String id) {
+    AppLog.instance.debug('download.resume', {'track': id});
     final task = _tasks[id];
     if (task != null) enqueue(task.track);
   }
@@ -286,6 +288,7 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<void> pause(String id) async {
+    AppLog.instance.debug('download.pause', {'track': id});
     final task = _tasks[id];
     if (task == null || _closed) return;
     if (task.status == DownloadStatus.downloading ||
@@ -319,6 +322,10 @@ class DownloadManager extends ChangeNotifier {
   }
 
   Future<void> _delete(String id, {required bool removeCompleted}) async {
+    AppLog.instance.debug('download.remove', {
+      'track': id,
+      'completed': removeCompleted,
+    });
     if (_closed || !_changing.add(id)) return;
     try {
       await pause(id);
@@ -355,6 +362,27 @@ class DownloadManager extends ChangeNotifier {
   }
 
   void _set(DownloadTask task) {
+    final previous = _tasks[task.track.id];
+    if (previous?.status != task.status) {
+      AppLog.instance.debug('download.state', {
+        'track': task.track.id,
+        'status': task.status.name,
+        'bytes': task.received,
+      });
+    }
+    if (task.status == DownloadStatus.failed) {
+      AppLog.instance.error('download.failed', {
+        'track': task.track.id,
+        'message': task.error,
+      });
+    }
+    if (task.status == DownloadStatus.completed &&
+        previous?.status != task.status) {
+      AppLog.instance.info('download.completed', {
+        'track': task.track.id,
+        'bytes': task.received,
+      });
+    }
     _tasks[task.track.id] = task;
     try {
       store.saveDownloadQueue(

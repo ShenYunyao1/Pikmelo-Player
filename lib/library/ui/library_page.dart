@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../shared/app_log.dart';
 import '../../downloads/ui/downloads_page.dart';
 import '../../playback/ui/player_bar.dart';
 import '../../playback/ui/playback_controls.dart';
@@ -79,6 +80,7 @@ class _LibraryPageState extends State<LibraryPage> {
   }
 
   void _open(Playlist playlist, bool desktop) {
+    AppLog.instance.debug('navigation.playlist', {'playlist': playlist.id});
     final server = ServerConnection.serverKey(widget.controller.serverUri);
     if (desktop) {
       setState(() {
@@ -148,8 +150,12 @@ class _LibraryPageState extends State<LibraryPage> {
                     minExtendedWidth: 208,
                     extended: constraints.maxWidth >= 1200,
                     selectedIndex: _destination,
-                    onDestinationSelected: (index) =>
-                        setState(() => _destination = index),
+                    onDestinationSelected: (index) {
+                      AppLog.instance.debug('navigation.main', {
+                        'destination': index,
+                      });
+                      setState(() => _destination = index);
+                    },
                     leading: const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Icon(Icons.graphic_eq_rounded, size: 32),
@@ -197,8 +203,12 @@ class _LibraryPageState extends State<LibraryPage> {
               if (!desktop)
                 NavigationBar(
                   selectedIndex: _destination,
-                  onDestinationSelected: (index) =>
-                      setState(() => _destination = index),
+                  onDestinationSelected: (index) {
+                    AppLog.instance.debug('navigation.main', {
+                      'destination': index,
+                    });
+                    setState(() => _destination = index);
+                  },
                   destinations: const [
                     NavigationDestination(
                       icon: Icon(Icons.library_music_outlined),
@@ -377,7 +387,12 @@ class _LibraryPageState extends State<LibraryPage> {
                         ),
                   isDense: true,
                 ),
-                onChanged: (value) => setState(() => _query = value),
+                onChanged: (value) {
+                  AppLog.instance.debug('library.search', {
+                    'characters': value.length,
+                  });
+                  setState(() => _query = value);
+                },
               ),
               const SizedBox(height: 12),
               Wrap(

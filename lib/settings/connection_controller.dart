@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import '../downloads/download_manager.dart';
+import '../downloads/models/download_task.dart';
 import '../infrastructure/server/pikmelo_api_client.dart';
 import '../infrastructure/storage/api_key_store.dart';
 import '../infrastructure/storage/local_library_store.dart';
@@ -23,6 +24,7 @@ import '../playback/playback_session.dart';
 import '../artwork/embedded_resources.dart';
 import '../lyrics/lyrics_repository.dart';
 import '../shared/diagnostics.dart';
+import '../shared/app_log.dart';
 import '../lyrics/models/lyric_document.dart';
 
 typedef ApiClientFactory = PikmeloApiClient Function(
@@ -40,7 +42,8 @@ class ConnectionController extends ChangeNotifier {
     this.playback,
     this.networkReader,
     this.updates,
-  }) {
+    DateTime Function()? now,
+  }) : _now = now ?? DateTime.now {
     playback?.resolveSource = _prepareSource;
     playback?.loadLyrics = _loadLyrics;
     playback?.cancelPreparation = () => _downloads?.cancelPreparation();
@@ -54,6 +57,10 @@ class ConnectionController extends ChangeNotifier {
         : Future.value();
   }
 
+  final DateTime Function() _now;
+  DateTime? _lastSyncAttempt;
+  Timer? _syncTimer;
+  bool _foreground = true;
   final ApiKeyStore _keyStore;
   final Future<LocalLibraryStore> Function() _openStore;
   final ApiClientFactory _createClient;
@@ -156,10 +163,7 @@ class ConnectionController extends ChangeNotifier {
       playback?.updateMetadata(serverUri, library.tracks(serverUri));
       notifyListeners();
     }
-    return library
-        .tracks(serverUri)
-        .where((track) => track.id == id)
-        .firstOrNull;
+    return library.track(serverUri, id);
   }
 
   Future<LyricDocument?> _loadLyrics(PlaybackItem item) {
@@ -263,6 +267,7 @@ class ConnectionController extends ChangeNotifier {
   bool get restorePlaybackEnabled =>
       mediaStorage?.store.setting('restore_playback_session') != 'false';
   void setRestorePlayback(bool value) {
+    AppLog.instance.debug('settings.restore_playback', {'enabled': value});
     final session = _playbackSession;
     if (session != null) {
       session.setEnabled(value);
@@ -284,11 +289,8 @@ class ConnectionController extends ChangeNotifier {
         key == null) {
       return Future.value();
     }
-    final tracks = library
-        .tracks(serverUri)
-        .where((track) => track.id == id && !track.missing && !track.removed);
-    if (tracks.isEmpty) return Future.value();
-    final track = tracks.first;
+    final track = library.track(serverUri, id);
+    if (track == null || track.missing || track.removed) return Future.value();
     final path = library.offlineSource(serverUri, id);
     return _artwork.load(
       scope: scope,
@@ -309,7 +311,77 @@ class ConnectionController extends ChangeNotifier {
     );
   }
 
-  Future<Uint8List?> playlistArtwork(String id) async {
+  final _playlistArtworkRequests =
+      <
+        String,
+        ({
+          Object revision,
+          int? networkRevision,
+          DateTime? retryAfter,
+          Future<Uint8List?> future,
+        })
+      >{};
+
+  Future<Uint8List?> playlistArtwork(String id) {
+    final playlist = _playlists.where((item) => item.id == id).firstOrNull;
+    Track? track;
+    for (final trackId in playlist?.trackIds ?? const <String>[]) {
+      if (playlist!.unavailableTrackIds.contains(trackId)) continue;
+      final candidate = _library?.track(serverUri, trackId);
+      if (candidate != null && !candidate.missing && !candidate.removed) {
+        track = candidate;
+        break;
+      }
+    }
+    final first = track?.id;
+    final path = first == null
+        ? null
+        : _library?.offlineSource(serverUri, first);
+    final revision = (
+      _scope,
+      playlist?.subscriptionInvalid,
+      playlist?.coverId,
+      first,
+      track?.coverId,
+      path,
+    );
+    final networkRevision = mediaStorage?.networkRevision;
+    final existing = _playlistArtworkRequests[id];
+    if (existing != null &&
+        existing.revision == revision &&
+        (existing.retryAfter == null ||
+            (existing.networkRevision == networkRevision &&
+                DateTime.now().isBefore(existing.retryAfter!)))) {
+      return existing.future;
+    }
+    if (_playlistArtworkRequests.length >= 64) {
+      _playlistArtworkRequests.remove(_playlistArtworkRequests.keys.first);
+    }
+    final future = _loadPlaylistArtwork(id, first);
+    _playlistArtworkRequests[id] = (
+      revision: revision,
+      networkRevision: networkRevision,
+      retryAfter: null,
+      future: future,
+    );
+    void retryLater() {
+      if (identical(_playlistArtworkRequests[id]?.future, future)) {
+        _playlistArtworkRequests[id] = (
+          revision: revision,
+          networkRevision: networkRevision,
+          retryAfter: DateTime.now().add(const Duration(minutes: 1)),
+          future: future,
+        );
+      }
+    }
+
+    future.then<void>((bytes) {
+      if (bytes == null) retryLater();
+    }, onError: (Object _, StackTrace _) => retryLater());
+    return future;
+  }
+
+  Future<Uint8List?> _loadPlaylistArtwork(String id, String? fallbackId) async {
     final scope = _scope;
     final key = _apiKey;
     final storage = mediaStorage;
@@ -342,9 +414,7 @@ class ConnectionController extends ChangeNotifier {
       if (!allowed()) return null;
       if (bytes != null) return bytes;
     }
-    final entries = entriesFor(id)
-        .where((entry) => !entry.unavailable && entry.track != null);
-    return entries.isEmpty ? null : artworkFor(entries.first.id);
+    return fallbackId == null ? null : artworkFor(fallbackId);
   }
 
   Future<Uint8List?> _fetchArtwork(String id, String scope, String key) async {
@@ -493,6 +563,85 @@ class ConnectionController extends ChangeNotifier {
     }
   }
 
+  void setLogLevel(LogLevel level) {
+    if (_disposed || mediaStorage == null) return;
+    mediaStorage!.store.saveSetting('log_level', level.name);
+    AppLog.instance.level = level;
+    AppLog.instance.info('settings.log_level', {'level': level.name});
+    notifyListeners();
+  }
+
+  static const syncIntervals = [30, 20, 10, 5];
+
+  int get syncIntervalMinutes {
+    final saved = int.tryParse(
+      mediaStorage?.store.setting('sync_interval_minutes') ?? '',
+    );
+    return syncIntervals.contains(saved) ? saved! : 30;
+  }
+
+  void setSyncIntervalMinutes(int minutes) {
+    if (_disposed || !syncIntervals.contains(minutes)) return;
+    final store = mediaStorage?.store;
+    if (store == null) return;
+    store.saveSetting('sync_interval_minutes', '$minutes');
+    AppLog.instance.debug('settings.sync_interval', {'minutes': minutes});
+    _scheduleSync();
+    notifyListeners();
+  }
+
+  void leaveForeground() {
+    AppLog.instance.debug('sync.background');
+    _foreground = false;
+    _syncTimer?.cancel();
+  }
+
+  void _scheduleSync() {
+    _syncTimer?.cancel();
+    if (_disposed || !_foreground || _apiKey == null || _busy) return;
+    final elapsed = _lastSyncAttempt == null
+        ? Duration.zero
+        : _now().difference(_lastSyncAttempt!);
+    final remaining = Duration(minutes: syncIntervalMinutes) - elapsed;
+    _syncTimer = Timer(remaining.isNegative ? Duration.zero : remaining, () {
+      unawaited(_automaticRefresh());
+    });
+  }
+
+  Future<void> _automaticRefresh() {
+    if (_disposed || !_foreground) return Future.value();
+    final downloading =
+        _downloads?.tasks.any(
+          (task) => task.status == DownloadStatus.downloading,
+        ) ??
+        false;
+    if (downloading || mediaStorage?.busy == true) {
+      AppLog.instance.debug('sync.deferred', {'download': downloading});
+      _syncTimer?.cancel();
+      _syncTimer = Timer(
+        const Duration(minutes: 1),
+        () => unawaited(_automaticRefresh()),
+      );
+      return Future.value();
+    }
+    return refresh();
+  }
+
+  Future<void> refreshOnForeground() {
+    _foreground = true;
+    _scheduleSync();
+    final lastAttempt = _lastSyncAttempt;
+    if (lastAttempt != null &&
+        _now().difference(lastAttempt) <
+            Duration(minutes: syncIntervalMinutes)) {
+      AppLog.instance.debug('sync.foreground_skipped', {
+        'intervalMinutes': syncIntervalMinutes,
+      });
+      return Future.value();
+    }
+    return _automaticRefresh();
+  }
+
   Future<void> refresh() {
     final key = _apiKey;
     if (_disposed || key == null) return Future.value();
@@ -526,6 +675,10 @@ class ConnectionController extends ChangeNotifier {
     final scope =
         '${connection.key}:${ServerConnection.credentialFingerprint(apiKey)}';
     if (_busy && _scope == scope) return _syncFuture!;
+    AppLog.instance.registerSecret(apiKey);
+    AppLog.instance.debug('sync.start', {'server': connection.uri});
+    _syncTimer?.cancel();
+    _lastSyncAttempt = _now();
     final version = ++_version;
     _activeClient?.close();
     _lyricsClient?.close();
@@ -611,10 +764,12 @@ class ConnectionController extends ChangeNotifier {
       _ensureCurrent(version);
       _readLibrary(store, connection);
       _connected = true;
+      AppLog.instance.info('sync.completed', {'pages': result.pages});
       _status = '已连接 · ${health['version'] ?? '服务器在线'} · 同步 ${result.pages} 页';
     } on SyncCancelledException {
       if (_isCurrent(version)) _status = '同步上下文已更新，请重试';
     } catch (error) {
+      AppLog.instance.error('sync.failed', {'type': error.runtimeType});
       if (!_isCurrent(version)) return;
       if (error is PikmeloApiException &&
           (error.statusCode == 401 || error.statusCode == 403)) {
@@ -639,6 +794,7 @@ class ConnectionController extends ChangeNotifier {
       if (_isCurrent(version)) {
         _activeClient = null;
         _busy = false;
+        _scheduleSync();
         notifyListeners();
       }
     }
@@ -671,6 +827,10 @@ class ConnectionController extends ChangeNotifier {
         beforeRemove: playback?.releaseFile,
         storage: mediaStorage,
       );
+      _completedDownloads = {
+        for (final task in _downloads!.tasks)
+          if (task.status == DownloadStatus.completed) task.track.id,
+      };
       _downloads!.addListener(_downloadsChanged);
     }
     if (_playbackSession == null && playback != null && _scope != null) {
@@ -691,9 +851,16 @@ class ConnectionController extends ChangeNotifier {
     playback?.invalidateLyrics();
   }
 
+  Set<String> _completedDownloads = {};
   String? _lyricsSourceKey;
   void _downloadsChanged() {
     if (!_disposed) {
+      final completed = {
+        for (final task in _downloads!.tasks)
+          if (task.status == DownloadStatus.completed) task.track.id,
+      };
+      if (setEquals(completed, _completedDownloads)) return;
+      _completedDownloads = completed;
       final storage = mediaStorage;
       if (storage != null && _library != null) {
         _loadLocalMetadata(storage.store, _connection);
@@ -714,6 +881,11 @@ class ConnectionController extends ChangeNotifier {
 
   void _initializeStorage(LocalLibraryStore store) {
     if (mediaStorage != null) return;
+    AppLog.instance.level =
+        LogLevel.values
+            .where((level) => level.name == store.setting('log_level'))
+            .firstOrNull ??
+        LogLevel.info;
     mediaStorage = MediaStorageController(store, networkReader: networkReader);
     mediaStorage!.addListener(_storageChanged);
     unawaited(updates?.initialize(mediaStorage!) ?? Future.value());
@@ -838,6 +1010,7 @@ class ConnectionController extends ChangeNotifier {
         _readLibrary(mediaStorage!.store, _connection);
         _busy = false;
         _prefetchKey = null;
+        _scheduleSync();
         notifyListeners();
       }
     }
@@ -864,6 +1037,7 @@ class ConnectionController extends ChangeNotifier {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _syncTimer?.cancel();
     _playbackSession?.dispose();
     playback?.presentationChanges.removeListener(_playbackChanged);
     _activeClient?.close();

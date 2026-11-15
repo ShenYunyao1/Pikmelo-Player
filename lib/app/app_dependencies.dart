@@ -2,6 +2,7 @@ import '../infrastructure/server/pikmelo_api_client.dart';
 import '../infrastructure/platform/system_media_service.dart';
 import '../infrastructure/playback/media_kit_playback_engine.dart';
 import '../shared/diagnostics.dart';
+import '../shared/app_log.dart';
 import '../playback/playback_controller.dart';
 import '../playback/playback_engine.dart';
 import '../infrastructure/storage/api_key_store.dart';
@@ -117,5 +118,7 @@ class AppDependencies {
       return;
     }
     store.close();
+    AppLog.instance.info('app.shutdown');
+    await AppLog.instance.flush();
   }
 }

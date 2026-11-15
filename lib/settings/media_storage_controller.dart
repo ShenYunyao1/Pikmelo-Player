@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../shared/app_log.dart';
 import '../infrastructure/storage/local_library_store.dart';
 import '../infrastructure/storage/media_files.dart';
 
@@ -122,6 +123,10 @@ class MediaStorageController extends ChangeNotifier {
     final online = values['connected'] ?? false;
     final mobile = values['cellular'] ?? false;
     if (networkKnown && online == connected && mobile == cellular) return;
+    AppLog.instance.debug('network.changed', {
+      'connected': online,
+      'cellular': mobile,
+    });
     connected = online;
     cellular = mobile;
     networkKnown = true;
@@ -138,6 +143,7 @@ class MediaStorageController extends ChangeNotifier {
               purpose == DownloadPurpose.playback));
 
   void setMobilePolicy(MobileDownloadPolicy value) {
+    AppLog.instance.debug('settings.mobile_download', {'policy': value.name});
     if (mobilePolicy == value) return;
     mobilePolicy = value;
     networkRevision++;
@@ -146,6 +152,7 @@ class MediaStorageController extends ChangeNotifier {
   }
 
   void setCacheLimit(int bytes) {
+    AppLog.instance.debug('settings.cache_limit', {'bytes': bytes});
     if (bytes < 64 * 1024 * 1024) throw ArgumentError.value(bytes);
     cacheLimit = bytes;
     store.saveSetting('playback_cache_limit', '$bytes');
@@ -194,6 +201,10 @@ class MediaStorageController extends ChangeNotifier {
   }
 
   Future<void> changeDirectory(String? target, {required bool migrate}) {
+    AppLog.instance.debug('settings.media_directory', {
+      'custom': target != null,
+      'migrate': migrate,
+    });
     if (busy) return Future.error(StateError('媒体目录正在变更。'));
     final work = _change(target, migrate: migrate);
     _working = work;

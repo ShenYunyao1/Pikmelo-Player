@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 
 import 'update_release.dart';
+import '../shared/app_log.dart';
 
 class UpdateCancelled implements Exception {
   const UpdateCancelled();
@@ -52,6 +53,11 @@ class GitHubUpdateService {
     for (var redirects = 0; redirects <= 5; redirects++) {
       if (_closed) throw const UpdateCancelled();
       if (!_allowed(uri)) throw const FormatException('更新地址不受信任。');
+      final elapsed = Stopwatch()..start();
+      AppLog.instance.debug('update.network.request', {
+        'method': 'GET',
+        'uri': uri,
+      });
       final request = await client
           .getUrl(uri)
           .timeout(const Duration(seconds: 20));
@@ -60,6 +66,11 @@ class GitHubUpdateService {
       final response = await request.close().timeout(
         const Duration(seconds: 30),
       );
+      AppLog.instance.debug('update.network.response', {
+        'uri': uri,
+        'status': response.statusCode,
+        'ms': elapsed.elapsedMilliseconds,
+      });
       if ({301, 302, 303, 307, 308}.contains(response.statusCode)) {
         final location = response.headers.value(HttpHeaders.locationHeader);
         await response.drain<void>().timeout(const Duration(seconds: 20));

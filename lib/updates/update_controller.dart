@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../shared/app_log.dart';
 import '../settings/media_storage_controller.dart';
 import 'github_update_service.dart';
 import 'update_platform.dart';
@@ -124,6 +125,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void setMobilePolicy(MobileUpdatePolicy value) {
+    AppLog.instance.debug('settings.mobile_update', {'policy': value.name});
     if (_closed || !initialized || mobilePolicy == value) return;
     mobilePolicy = value;
     _storage!.store.saveSetting('mobile_update_policy', value.name);
@@ -140,6 +142,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void setAutomatic(bool value) {
+    AppLog.instance.debug('settings.automatic_update', {'enabled': value});
     automatic = value;
     _storage?.store.saveSetting('automatic_updates', value.toString());
     if (!value && _automaticDownload) cancel();
@@ -282,6 +285,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void cancel() {
+    AppLog.instance.debug('update.cancel');
     _revision++;
     service.cancel();
     phase = release == null ? UpdatePhase.idle : UpdatePhase.available;
@@ -359,6 +363,7 @@ class UpdateController extends ChangeNotifier with WidgetsBindingObserver {
 
   bool _current(int revision) => !_closed && revision == _revision;
   void _failure(Object error) {
+    AppLog.instance.error('update.failed', {'type': error.runtimeType});
     if (_closed) return;
     phase = UpdatePhase.failed;
     message = switch (error) {

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../shared/diagnostics.dart';
+import '../../shared/app_log.dart';
 
 /// Access to local paths and Android document URIs.
 class MediaFiles {
@@ -22,6 +23,10 @@ class MediaFiles {
   final _deleting = <String>{};
 
   Future<T> readSafely<T>(String path, Future<T> Function() operation) {
+    AppLog.instance.debug('media.read', {
+      'file': Diagnostics.identifier(path),
+      'document': isDocument(path),
+    });
     if (_deleting.contains(path)) {
       throw FileSystemException('Media is being deleted', path);
     }

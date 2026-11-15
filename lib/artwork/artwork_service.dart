@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:crypto/crypto.dart';
 import 'package:path_provider/path_provider.dart';
 
+import '../shared/app_log.dart';
 import '../infrastructure/storage/media_files.dart';
 import 'embedded_resources.dart';
 
@@ -53,6 +54,10 @@ class ArtworkService {
       _retryAfter.remove(oldest);
     }
     _retryAfter.remove(requestKey);
+    AppLog.instance.debug('artwork.load', {
+      'embedded': path != null,
+      'cover': coverId,
+    });
     final result = _pending.then(
       (_) => _load(key, serverKey, path, coverId, files, fetchCover, allowed),
     );
@@ -107,7 +112,8 @@ class ArtworkService {
       if (bytes == null || !await validImage(bytes) || !allowed()) return null;
       await _save(serverFile, bytes);
       return allowed() ? bytes : null;
-    } catch (_) {
+    } catch (error) {
+      AppLog.instance.warn('artwork.failed', {'type': error.runtimeType});
       return null;
     }
   }

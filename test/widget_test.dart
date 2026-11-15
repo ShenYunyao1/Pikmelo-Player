@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pikmelo_player/shared/app_log.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pikmelo_player/main.dart';
 import 'package:pikmelo_player/settings/ui/settings_view.dart';
@@ -22,7 +23,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('设置').last);
     await tester.pumpAndSettle();
-    for (final label in ['服务器配置', '下载行为', '播放行为', '关于']) {
+    for (final label in ['服务器配置', '下载行为', '播放行为', '日志', '关于']) {
       expect(find.text(label), findsOneWidget);
     }
     expect(find.byType(TextField), findsNothing);
@@ -43,6 +44,26 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(find.text('下载行为'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('关于')).dy,
+      greaterThan(tester.getTopLeft(find.text('日志')).dy),
+    );
+    await tester.tap(find.text('日志'));
+    await tester.pumpAndSettle();
+    expect(find.text('循环日志'), findsOneWidget);
+    await tester.tap(find.text('记录级别'));
+    await tester.pumpAndSettle();
+    for (final label in ['error', 'warn', 'info', 'debug']) {
+      expect(find.text(label), findsOneWidget);
+    }
+    await tester.tap(find.text('debug'));
+    await tester.pumpAndSettle();
+    expect(AppLog.instance.level, LogLevel.debug);
+    expect((await dependencies.openStore()).setting('log_level'), 'debug');
+    await tester.tap(find.text('记录级别'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('info'));
+    await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox.shrink());
     final closing = dependencies.dispose();
     await tester.pump();
@@ -179,7 +200,7 @@ void main() {
       ]) {
         tester.view.physicalSize = size;
         await tester.pumpAndSettle();
-        for (final section in ['服务器配置', '下载行为', '播放行为', '关于']) {
+        for (final section in ['服务器配置', '下载行为', '播放行为', '日志', '关于']) {
           final scrollable = find
               .descendant(
                 of: find.byType(SettingsView),

@@ -6,8 +6,10 @@ import '../../updates/update_platform.dart';
 import 'connection_card.dart';
 import 'download_settings.dart';
 import 'playback_settings.dart';
+import 'log_settings.dart';
+import '../../shared/app_log.dart';
 
-enum _Section { server, downloads, playback, about }
+enum _Section { server, downloads, playback, logs, about }
 
 class SettingsView extends StatefulWidget {
   const SettingsView({
@@ -33,6 +35,7 @@ class _SettingsViewState extends State<SettingsView> {
     _Section.server: '服务器配置',
     _Section.downloads: '下载行为',
     _Section.playback: '播放行为',
+    _Section.logs: '日志',
     _Section.about: '关于',
   };
   @override
@@ -64,6 +67,7 @@ class _SettingsViewState extends State<SettingsView> {
           onDownloads: widget.onDownloads,
         ),
         _Section.playback => PlaybackSettings(controller: controller),
+        _Section.logs => LogSettings(controller: controller),
         _Section.about => ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -99,6 +103,7 @@ class _SettingsViewState extends State<SettingsView> {
                   _Section.server => Icons.cloud_outlined,
                   _Section.downloads => Icons.download_outlined,
                   _Section.playback => Icons.headphones_outlined,
+                  _Section.logs => Icons.receipt_long_outlined,
                   _Section.about => Icons.info_outline,
                 }),
                 title: Text(_labels[section]!),
@@ -113,13 +118,19 @@ class _SettingsViewState extends State<SettingsView> {
                     player == null
                         ? '队列恢复与默认播放模式'
                         : '${controller.restorePlaybackEnabled ? '恢复队列' : '不恢复队列'} · ${playbackModeLabel(player.defaultMode)}',
+                  _Section.logs => '20 MB 循环 · ${AppLog.instance.level.name}',
                   _Section.about =>
                     updates?.release != null
                         ? '发现新版本 ${updates!.release!.version}'
                         : '当前版本 ${updates?.currentVersion ?? '信息暂不可用'}',
                 }),
                 trailing: const Icon(Icons.chevron_right),
-                onTap: () => setState(() => _section = section),
+                onTap: () {
+                  AppLog.instance.debug('navigation.settings', {
+                    'section': section.name,
+                  });
+                  setState(() => _section = section);
+                },
               ),
           ],
         ),

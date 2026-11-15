@@ -19,21 +19,31 @@ class LibraryRepository {
         row['track_id'] as String: row['file_path'] as String,
     };
     return List.unmodifiable(
-      _store.tracks(serverUri).map((json) {
-        final track = Track.fromJson(json);
-        final path = offline[track.id];
-        final local =
-            path != null &&
-                !track.missing &&
-                !track.removed &&
-                _store.files.exists(path, track.size)
-            ? _store.localMetadata(path)
-            : null;
-        return local == null
-            ? track
-            : Track.fromJson({...json, ...local, '_local_metadata': true});
-      }),
+      _store
+          .tracks(serverUri)
+          .map((json) => _withLocalMetadata(json, offline[json['id']])),
     );
+  }
+
+  Track? track(Uri serverUri, String id) {
+    final json = _store.track(serverUri, id);
+    if (json == null) return null;
+    final path = _store.offlineMedia(serverUri, id)?['file_path'] as String?;
+    return _withLocalMetadata(json, path);
+  }
+
+  Track _withLocalMetadata(Map<String, dynamic> json, String? path) {
+    final track = Track.fromJson(json);
+    final local =
+        path != null &&
+            !track.missing &&
+            !track.removed &&
+            _store.files.exists(path, track.size)
+        ? _store.localMetadata(path)
+        : null;
+    return local == null
+        ? track
+        : Track.fromJson({...json, ...local, '_local_metadata': true});
   }
 
   String? offlineSource(Uri uri, String id) {

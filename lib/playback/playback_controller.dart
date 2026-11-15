@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'models/playback_item.dart';
 import 'models/playback_state.dart';
 import 'playback_engine.dart';
+import '../shared/app_log.dart';
 import '../library/models/track.dart';
 import '../lyrics/models/lyric_document.dart';
 
@@ -67,6 +68,7 @@ class PlaybackController extends ChangeNotifier {
   bool _disposed = false;
   bool _notifierDisposed = false;
   final _presentationChanges = ChangeNotifier();
+
   /// Metadata and controls changes. Position updates use the controller itself.
   Listenable get presentationChanges => _presentationChanges;
   Object? _lastPresentation;
@@ -143,6 +145,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   void append(PlaybackItem item) {
+    AppLog.instance.debug('queue.append', {'track': item.track.id});
     if (_disposed || !_available(item)) return;
     _queue = List.unmodifiable([
       ..._queue,
@@ -162,6 +165,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   void move(int from, int to) {
+    AppLog.instance.debug('queue.move', {'from': from, 'to': to});
     if (_disposed ||
         from < 0 ||
         from >= _queue.length ||
@@ -184,6 +188,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> remove(int index) {
+    AppLog.instance.debug('queue.remove', {'index': index});
     if (_disposed || index < 0 || index >= _queue.length) return Future.value();
     final wasCurrent = index == _index;
     final play = _playRequested;
@@ -217,6 +222,11 @@ class PlaybackController extends ChangeNotifier {
     bool play = true,
     Duration position = Duration.zero,
   }) {
+    AppLog.instance.debug('playback.jump', {
+      'index': index,
+      'play': play,
+      'positionMs': position.inMilliseconds,
+    });
     if (_disposed) return Future.value();
     _stopped = false;
     cancelPreparation?.call();
@@ -298,6 +308,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> play() {
+    AppLog.instance.debug('playback.play');
     if (_disposed) return Future.value();
     _transportRevision++;
     _playRequested = true;
@@ -315,6 +326,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> pause() {
+    AppLog.instance.debug('playback.pause');
     if (_disposed) return Future.value();
     _transportRevision++;
     _playRequested = false;
@@ -325,6 +337,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> stop() {
+    AppLog.instance.debug('playback.stop');
     if (_disposed) return Future.value();
     final version = ++_version;
     _transportRevision++;
@@ -357,6 +370,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> seek(Duration position) {
+    AppLog.instance.debug('playback.seek', {'ms': position.inMilliseconds});
     _seekRevision++;
     final duration = _state.duration;
     final milliseconds = position.inMilliseconds.clamp(
@@ -378,6 +392,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> setVolume(double volume) {
+    AppLog.instance.debug('playback.volume', {'value': volume});
     _volume = volume.clamp(0, 100);
     _notify();
     return _schedule(_version, () async {
@@ -395,12 +410,14 @@ class PlaybackController extends ChangeNotifier {
   }
 
   void setDefaultMode(PlaybackMode mode) {
+    AppLog.instance.debug('playback.default_mode', {'mode': mode.name});
     if (_disposed || _defaultMode == mode) return;
     _defaultMode = mode;
     _notify();
   }
 
   void setMode(PlaybackMode mode) {
+    AppLog.instance.debug('playback.mode', {'mode': mode.name});
     _mode = mode;
     _shuffleBag.clear();
     _history.clear();
@@ -408,6 +425,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> next({bool automatic = false}) {
+    AppLog.instance.debug('playback.next', {'automatic': automatic});
     if (_disposed || _queue.isEmpty) return Future.value();
     if (automatic && _mode == PlaybackMode.repeatOne) return jump(_index);
     final item = current;
@@ -464,6 +482,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> previous() {
+    AppLog.instance.debug('playback.previous');
     if (_mode == PlaybackMode.shuffle && _history.isNotEmpty) {
       return jump(_queue.indexOf(_history.removeLast()));
     }
@@ -476,6 +495,7 @@ class PlaybackController extends ChangeNotifier {
   }
 
   Future<void> clear() {
+    AppLog.instance.debug('queue.clear');
     _stopped = false;
     cancelPreparation?.call();
     _transportRevision++;
@@ -611,6 +631,17 @@ class PlaybackController extends ChangeNotifier {
       loadMetadata,
     );
     if (_lastPresentation != presentation) {
+      AppLog.instance.debug('playback.state', {
+        'track': current?.track.id,
+        'playing': _state.playing,
+        'loading': _loading,
+        'buffering': _state.buffering,
+      });
+      if (_state.error != null || _systemError != null) {
+        AppLog.instance.error('playback.error', {
+          'message': _state.error ?? _systemError,
+        });
+      }
       _lastPresentation = presentation;
       _presentationChanges.notifyListeners();
     }

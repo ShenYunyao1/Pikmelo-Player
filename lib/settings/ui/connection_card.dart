@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../connection_controller.dart';
+import 'setting_choice.dart';
 
 class ConnectionCard extends StatelessWidget {
   const ConnectionCard({
@@ -75,6 +76,29 @@ class ConnectionCard extends StatelessWidget {
                     )
                   : const Icon(Icons.sync_rounded),
               label: Text(controller.busy ? '更新连接' : '连接并同步'),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('同步间隔'),
+              subtitle: Text('${controller.syncIntervalMinutes} 分钟 · 前台自动同步'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: controller.mediaStorage == null
+                  ? null
+                  : () async {
+                      final value = await chooseSetting(
+                        context,
+                        '同步间隔',
+                        controller.syncIntervalMinutes,
+                        {
+                          for (final minutes
+                              in ConnectionController.syncIntervals)
+                            minutes: '$minutes 分钟',
+                        },
+                      );
+                      if (value != null && context.mounted) {
+                        controller.setSyncIntervalMinutes(value);
+                      }
+                    },
             ),
             const SizedBox(height: 12),
             Text(

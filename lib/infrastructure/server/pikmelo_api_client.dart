@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import '../../settings/models/server_connection.dart';
 
 import 'sync_page.dart';
+import '../../shared/app_log.dart';
 
 class PikmeloApiException implements Exception {
   const PikmeloApiException(
@@ -47,6 +48,7 @@ class PikmeloApiClient {
   }) : _serverUri = ServerConnection(serverUri).uri,
        _httpClient = httpClient ?? HttpClient() {
     _httpClient.connectionTimeout = requestTimeout;
+    AppLog.instance.registerSecret(_apiKey);
   }
 
   final Uri _serverUri;
@@ -63,13 +65,14 @@ class PikmeloApiClient {
     if (id.isEmpty || id.contains('/') || id.contains('\\')) {
       throw ArgumentError.value(id, 'id');
     }
-    final request = await _httpClient
-        .getUrl(_apiUri('covers/$id'))
-        .timeout(requestTimeout);
+    final request = await _openRequest(
+      'GET',
+      _apiUri('covers/$id'),
+    ).timeout(requestTimeout);
     request.followRedirects = false;
     _setAuthHeaders(request);
     request.headers.set(HttpHeaders.acceptHeader, 'image/*');
-    final response = await _timeout(request.close(), request);
+    final response = await _send(request);
     if (response.statusCode == 404) {
       await _timeout(response.drain<void>(), request);
       return null;
@@ -108,12 +111,13 @@ class PikmeloApiClient {
     if (trackId.isEmpty || trackId.contains('/') || trackId.contains('\\')) {
       throw ArgumentError.value(trackId, 'trackId');
     }
-    final request = await _httpClient
-        .openUrl('HEAD', _apiUri('media/$trackId'))
-        .timeout(requestTimeout);
+    final request = await _openRequest(
+      'HEAD',
+      _apiUri('media/$trackId'),
+    ).timeout(requestTimeout);
     _setAuthHeaders(request);
     request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
-    final response = await _timeout(request.close(), request);
+    final response = await _send(request);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await _throwResponseError(response);
     }
@@ -150,9 +154,10 @@ class PikmeloApiClient {
     final initialLength = receivedBytes;
     while (expectedBytes <= 0 || receivedBytes < expectedBytes) {
       if (_closed.isCompleted) throw StateError('The API client is closed.');
-      final request = await _httpClient
-          .getUrl(_apiUri('media/$trackId'))
-          .timeout(requestTimeout);
+      final request = await _openRequest(
+        'GET',
+        _apiUri('media/$trackId'),
+      ).timeout(requestTimeout);
       _setAuthHeaders(request);
       request.headers.set(HttpHeaders.acceptEncodingHeader, 'identity');
       if (receivedBytes > 0) {
@@ -162,7 +167,7 @@ class PikmeloApiClient {
         }
       }
 
-      final response = await _timeout(request.close(), request);
+      final response = await _send(request);
       if (response.statusCode != HttpStatus.ok &&
           response.statusCode != HttpStatus.partialContent) {
         await _throwResponseError(response);
@@ -283,10 +288,10 @@ class PikmeloApiClient {
       _retry(() => _getJsonOnce(uri));
 
   Future<Map<String, dynamic>> _getJsonOnce(Uri uri) async {
-    final request = await _httpClient.getUrl(uri).timeout(requestTimeout);
+    final request = await _openRequest('GET', uri).timeout(requestTimeout);
     _setAuthHeaders(request);
     request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-    final response = await _timeout(request.close(), request);
+    final response = await _send(request);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       await _throwResponseError(response);
     }
@@ -334,6 +339,52 @@ class PikmeloApiClient {
     );
   }
 
+  final _requestTimes = Expando<Stopwatch>();
+
+  Future<HttpClientRequest> _openRequest(String method, Uri uri) async {
+    final elapsed = Stopwatch()..start();
+    AppLog.instance.debug('network.request', {'method': method, 'uri': uri});
+    try {
+      final request = await _httpClient
+          .openUrl(method, uri)
+          .timeout(requestTimeout);
+      _requestTimes[request] = elapsed;
+      return request;
+    } catch (error) {
+      AppLog.instance.error('network.connect_failed', {
+        'method': method,
+        'uri': uri,
+        'type': error.runtimeType,
+        'ms': elapsed.elapsedMilliseconds,
+      });
+      rethrow;
+    }
+  }
+
+  Future<HttpClientResponse> _send(HttpClientRequest request) async {
+    try {
+      final response = await _timeout(request.close(), request);
+      final fields = <String, Object?>{
+        'method': request.method,
+        'uri': request.uri,
+        'status': response.statusCode,
+        'ms': _requestTimes[request]?.elapsedMilliseconds,
+      };
+      AppLog.instance.debug('network.response', fields);
+      if (response.statusCode >= 400) {
+        AppLog.instance.warn('network.http_error', fields);
+      }
+      return response;
+    } catch (error) {
+      AppLog.instance.error('network.failed', {
+        'method': request.method,
+        'uri': request.uri,
+        'type': error.runtimeType,
+      });
+      rethrow;
+    }
+  }
+
   Future<T> _timeout<T>(Future<T> operation, HttpClientRequest request) =>
       operation.timeout(
         requestTimeout,
@@ -342,6 +393,10 @@ class PikmeloApiClient {
             'The server request timed out.',
             requestTimeout,
           );
+          AppLog.instance.error('network.timeout', {
+            'method': request.method,
+            'uri': request.uri,
+          });
           request.abort(error);
           throw error;
         },
@@ -354,6 +409,10 @@ class PikmeloApiClient {
         return await operation();
       } on PikmeloApiException catch (error) {
         if (error.statusCode != 429 || attempt >= maxRetries) rethrow;
+        AppLog.instance.warn('network.retry', {
+          'attempt': attempt + 1,
+          'status': error.statusCode,
+        });
         await _waitForRetry(error.retryAfter ?? Duration(seconds: attempt + 1));
       }
     }

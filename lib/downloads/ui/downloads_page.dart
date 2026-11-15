@@ -19,49 +19,54 @@ class DownloadsPage extends StatelessWidget {
     listenable: controller,
     builder: (context, _) {
       final manager = controller.downloads;
-      final tasks = manager?.tasks ?? const <DownloadTask>[];
-      final content = DefaultTabController(
-        length: 2,
-        child: Column(
-          children: [
-            const TabBar(
-              tabs: [
-                Tab(text: '任务'),
-                Tab(text: '已下载'),
+      return ListenableBuilder(
+        listenable: manager ?? controller,
+        builder: (context, _) {
+          final tasks = manager?.tasks ?? const <DownloadTask>[];
+          final content = DefaultTabController(
+            length: 2,
+            child: Column(
+              children: [
+                const TabBar(
+                  tabs: [
+                    Tab(text: '任务'),
+                    Tab(text: '已下载'),
+                  ],
+                ),
+                Expanded(
+                  child: TabBarView(
+                    children: [
+                      _taskList(
+                        context,
+                        tasks
+                            .where(
+                              (task) => task.status != DownloadStatus.completed,
+                            )
+                            .toList(),
+                      ),
+                      _taskList(
+                        context,
+                        tasks
+                            .where(
+                              (task) => task.status == DownloadStatus.completed,
+                            )
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
-            Expanded(
-              child: TabBarView(
-                children: [
-                  _taskList(
-                    context,
-                    tasks
-                        .where(
-                          (task) => task.status != DownloadStatus.completed,
-                        )
-                        .toList(),
-                  ),
-                  _taskList(
-                    context,
-                    tasks
-                        .where(
-                          (task) => task.status == DownloadStatus.completed,
-                        )
-                        .toList(),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-      if (embedded) return content;
-      return Scaffold(
-        bottomNavigationBar: controller.playback == null
-            ? null
-            : PlayerBar(controller: controller.playback!),
-        appBar: AppBar(title: const Text('下载管理')),
-        body: content,
+          );
+          if (embedded) return content;
+          return Scaffold(
+            bottomNavigationBar: controller.playback == null
+                ? null
+                : PlayerBar(controller: controller.playback!),
+            appBar: AppBar(title: const Text('下载管理')),
+            body: content,
+          );
+        },
       );
     },
   );

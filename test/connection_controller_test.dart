@@ -1,3 +1,4 @@
+import 'package:pikmelo_player/shared/app_log.dart';
 import 'package:pikmelo_player/settings/media_storage_controller.dart';
 import 'package:sqlite3/sqlite3.dart' as sql;
 import 'package:pikmelo_player/lyrics/models/lyric_document.dart';
@@ -283,6 +284,149 @@ void main() {
     },
   );
 
+  test(
+    'playlist artwork retains its future across repeated view builds',
+    () async {
+      client.playlistFields = {'cover_id': 'list-cover'};
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      final first = controller.playlistArtwork('playlist-1');
+      expect(identical(controller.playlistArtwork('playlist-1'), first), true);
+      await first;
+    },
+  );
+
+  test('foreground sync uses the persisted interval while manual refresh stays immediate', () async {
+    var now = DateTime(2026, 11, 15);
+    controller.dispose();
+    controller = ConnectionController(
+      keyStore: keys,
+      openStore: () async => store,
+      createClient: (_, _) => client,
+      networkReader: () async => {'connected': true, 'cellular': false},
+      now: () => now,
+    );
+    client.health.complete({'version': 'test'});
+    await controller.connectAndSync('https://example.com', 'test-key');
+    expect(controller.syncIntervalMinutes, 30);
+    controller.setSyncIntervalMinutes(5);
+    expect(store.setting('sync_interval_minutes'), '5');
+    final cover = controller.playlistArtwork('playlist-1');
+    await cover;
+    now = now.add(const Duration(minutes: 1));
+    await controller.refreshOnForeground();
+    expect(client.syncCalls, 1);
+    now = now.add(const Duration(minutes: 4));
+    await controller.refreshOnForeground();
+    expect(client.syncCalls, 2);
+    expect(identical(controller.playlistArtwork('playlist-1'), cover), isTrue);
+    await controller.refresh();
+    expect(client.syncCalls, 3);
+  });
+
+  test('download progress stays local and completion and removal update the library', () async {
+    final directory = await Directory.systemTemp.createTemp(
+      'pikmelo-progress-',
+    );
+    final job = Completer<MediaDownloadResult>();
+    var now = DateTime(2026, 11, 15);
+    controller.dispose();
+    controller = ConnectionController(
+      keyStore: keys,
+      openStore: () async => store,
+      createClient: (_, _) => client,
+      networkReader: () async => {'connected': true, 'cellular': false},
+      now: () => now,
+    );
+    try {
+      client.health.complete({'version': 'test'});
+      await controller.connectAndSync('https://example.com', 'test-key');
+      client.downloadJob = job;
+      controller.mediaStorage!.directory = directory.path;
+      controller.enqueueDownload('track-1');
+      for (
+        var attempt = 0;
+        attempt < 100 && client.downloadProgress == null;
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(client.downloadProgress, isNotNull);
+      var notifications = 0;
+      var progressEvents = 0;
+      controller.addListener(() => notifications++);
+      controller.downloads!.addListener(() => progressEvents++);
+      client.downloadProgress!(1, 5);
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      client.downloadProgress!(2, 5);
+      expect(controller.downloads!.tasks.single.received, 2);
+      expect(progressEvents, greaterThan(0));
+      expect(notifications, 0);
+      now = now.add(const Duration(minutes: 31));
+      await controller.refreshOnForeground();
+      expect(client.syncCalls, 1);
+      expect(
+        controller.downloads!.tasks.single.status,
+        DownloadStatus.downloading,
+      );
+      final file = await File('${directory.path}/track.media')
+          .writeAsBytes([1, 2, 3, 4, 5]);
+      job.complete(
+        MediaDownloadResult(file: file, etag: null, bytesWritten: 5),
+      );
+      for (
+        var attempt = 0;
+        attempt < 100 &&
+            controller.downloads!.tasks.single.status !=
+                DownloadStatus.completed;
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(
+        controller.downloads!.tasks.single.status,
+        DownloadStatus.completed,
+      );
+      expect(controller.entriesFor('playlist-1').first.downloaded, isTrue);
+      expect(notifications, greaterThan(0));
+      final completedNotifications = notifications;
+      await controller.downloads!.remove('track-1');
+      expect(controller.entriesFor('playlist-1').first.downloaded, isFalse);
+      expect(notifications, greaterThan(completedNotifications));
+    } finally {
+      if (!job.isCompleted && client.downloadProgress != null) {
+        job.completeError(const SocketException('test cancellation'));
+      }
+      controller.dispose();
+      await controller.downloadShutdown;
+      await directory.delete(recursive: true);
+    }
+  });
+
+  test(
+    'synchronization and log preferences survive controller restoration',
+    () async {
+      await controller.initialize();
+      expect(controller.syncIntervalMinutes, 30);
+      controller.setSyncIntervalMinutes(20);
+      controller.setLogLevel(LogLevel.warn);
+      controller.dispose();
+      await controller.downloadShutdown;
+      controller = ConnectionController(
+        keyStore: keys,
+        openStore: () async => store,
+        createClient: (_, _) => client,
+        networkReader: () async => {'connected': true, 'cellular': false},
+      );
+      await controller.initialize();
+      expect(controller.syncIntervalMinutes, 20);
+      expect(AppLog.instance.level, LogLevel.warn);
+      controller.setSyncIntervalMinutes(3);
+      expect(controller.syncIntervalMinutes, 20);
+      controller.setLogLevel(LogLevel.info);
+    },
+  );
+
   testWidgets('playlist details show the server description', (tester) async {
     client.playlistFields = {'description': '  服务器上的歌单简介\n第二行内容  '};
     client.health.complete({'version': 'test'});
@@ -353,7 +497,13 @@ void main() {
         track: store.tracks(controller.serverUri).first,
         file: file,
       );
-      expect(await controller.playlistArtwork('playlist-1'), own);
+      final artwork = controller.playlistArtwork('playlist-1');
+      expect(await artwork, own);
+      controller.mediaStorage!.setMobilePolicy(MobileDownloadPolicy.allow);
+      expect(
+        identical(controller.playlistArtwork('playlist-1'), artwork),
+        isTrue,
+      );
       expect(client.coverCalls, ['playlist-cover']);
       client.covers.clear();
       expect(await controller.playlistArtwork('playlist-1'), own);
@@ -1032,7 +1182,7 @@ void main() {
     },
   );
 
-  testWidgets('returning to the foreground refreshes the selected connection', (
+  testWidgets('short foreground returns reuse the selected connection', (
     tester,
   ) async {
     final clients = <_ControlledClient>[];
@@ -1068,8 +1218,39 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await tester.pumpAndSettle();
-      expect(clients.length, 2);
+      expect(clients.length, 1);
       expect(clients.every((client) => client.closed), isTrue);
+      await tester.tap(find.text('设置').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('服务器配置'));
+      await tester.pumpAndSettle();
+      await Scrollable.ensureVisible(tester.element(find.text('同步间隔')));
+      await tester.tap(find.text('同步间隔'));
+      await tester.pumpAndSettle();
+      expect(find.text('30 分钟'), findsOneWidget);
+      expect(find.text('20 分钟'), findsOneWidget);
+      expect(find.text('10 分钟'), findsOneWidget);
+      expect(find.text('5 分钟'), findsOneWidget);
+      await tester.tap(find.text('10 分钟'));
+      await tester.pumpAndSettle();
+      expect(
+        (await dependencies.openStore()).setting('sync_interval_minutes'),
+        '10',
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      await tester.pump(const Duration(minutes: 10));
+      await tester.pumpAndSettle();
+      expect(clients.length, 1);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+      expect(clients.length, 1);
+      await tester.pump(const Duration(minutes: 10));
+      await tester.pumpAndSettle();
+      expect(clients.length, 2);
     } finally {
       await tester.pumpWidget(const SizedBox.shrink());
       await dependencies.dispose();
@@ -1186,6 +1367,33 @@ class _ControlledClient extends PikmeloApiClient {
   Future<Uint8List?> fetchCover(String id) async {
     coverCalls.add(id);
     return covers[id];
+  }
+
+  Completer<MediaDownloadResult>? downloadJob;
+  void Function(int, int?)? downloadProgress;
+
+  @override
+  Future<MediaDownloadResult> downloadMedia({
+    required String trackId,
+    required Directory directory,
+    required int expectedBytes,
+    String? resumeEtag,
+    void Function(int, int?)? onProgress,
+    void Function(String?)? onEtag,
+  }) {
+    final job = downloadJob;
+    if (job == null) {
+      return super.downloadMedia(
+        trackId: trackId,
+        directory: directory,
+        expectedBytes: expectedBytes,
+        resumeEtag: resumeEtag,
+        onProgress: onProgress,
+        onEtag: onEtag,
+      );
+    }
+    downloadProgress = onProgress;
+    return job.future;
   }
 
   Completer<PikmeloSyncPage>? syncPage;
